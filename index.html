@@ -61,6 +61,9 @@
   .slope .kind { font-size: 20px; font-weight: 600; margin-top: 6px; }
   #slopeG { transform-origin: 60px 40px; transition: transform .5s; }
   .chart { grid-column: 1 / -1; }
+  .seg { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .seg button { min-height: 48px; padding: 0 18px; font-size: 16px; }
+  .seg button.on { background: var(--accent); color: #06222b; border-color: var(--accent); font-weight: 600; }
   .chart canvas { width: 100%; height: 190px; display: block; margin-top: 10px; }
 
   @media (max-width: 800px) {
@@ -117,10 +120,15 @@
 
   <section class="tile chart">
     <div class="heading-row">
-      <div class="label">Magasság az úton (utolsó 2 km)</div>
+      <div class="label">Grafikon (utolsó 2 km)</div>
       <div class="label">Megtett út: <span id="trip">0 m</span></div>
     </div>
-    <canvas id="chart" aria-label="Magasság grafikon"></canvas>
+    <div class="seg" id="seg">
+      <button type="button" data-mode="alt">Magasság</button>
+      <button type="button" data-mode="both">Mindkettő</button>
+      <button type="button" data-mode="spd">Sebesség</button>
+    </div>
+    <canvas id="chart" aria-label="Magasság és sebesség grafikon"></canvas>
   </section>
 
   <section class="tile">
@@ -205,6 +213,9 @@
     else { k.textContent = "Sík"; s.style.color = css("--ok"); }
   }
 
+  var chartMode = "alt";
+  try { var sm0 = localStorage.getItem("chartMode"); if (sm0 === "alt" || sm0 === "both" || sm0 === "spd") chartMode = sm0; } catch (e) {}
+
   function drawChart() {
     var cv = $("chart"), w = cv.clientWidth, h = 190, r = window.devicePixelRatio || 1;
     if (!w) return;
@@ -212,9 +223,10 @@
     var ctx = cv.getContext("2d");
     ctx.setTransform(r, 0, 0, r, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    var dim = css("--dim"), line = css("--line"), accent = css("--accent");
+    var dim = css("--dim"), line = css("--line"), cA = css("--accent"), cV = css("--warn");
     ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
 
+    var showA = chartMode !== "spd", showV = chartMode !== "alt";
     var win = pts.filter(function (p) { return p.d >= dist - WINDOW_M; });
     if (win.length < 2) {
       ctx.fillStyle = dim; ctx.textAlign = "center";
@@ -222,31 +234,73 @@
       return;
     }
     var x0 = Math.min(win[0].d, dist - 100), x1 = dist;
-    var lo = Infinity, hi = -Infinity;
-    win.forEach(function (p) { if (p.a < lo) lo = p.a; if (p.a > hi) hi = p.a; });
-    if (hi - lo < 10) { var mid = (hi + lo) / 2; lo = mid - 5; hi = mid + 5; }
-    var pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
 
-    var L = 52, R = 12, T = 10, B = 24, pw = w - L - R, ph = h - T - B;
-    function X(d) { return L + (d - x0) / (x1 - x0) * pw; }
-    function Y(a) { return T + (1 - (a - lo) / (hi - lo)) * ph; }
-
-    ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.fillStyle = dim; ctx.textAlign = "right";
-    for (var i = 0; i <= 3; i++) {
-      var v = lo + (hi - lo) * i / 3, y = Math.round(Y(v)) + 0.5;
-      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke();
-      ctx.fillText(v.toFixed(0) + " m", L - 8, y + 4);
+    var lo = 0, hi = 1, pad;
+    if (showA) {
+      lo = Infinity; hi = -Infinity;
+      win.forEach(function (p) { if (p.a < lo) lo = p.a; if (p.a > hi) hi = p.a; });
+      if (hi - lo < 10) { var mid = (hi + lo) / 2; lo = mid - 5; hi = mid + 5; }
+      pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
     }
+    var vlo = 0, vhi = 20;
+    if (showV) {
+      win.forEach(function (p) { if (p.v !== null && p.v > vhi) vhi = p.v; });
+      vhi = Math.ceil(vhi * 1.1 / 10) * 10;
+    }
+
+    var L = showA ? 52 : 70, R = (showA && showV) ? 70 : 12, T = 10, B = 24, pw = w - L - R, ph = h - T - B;
+    function X(d) { return L + (d - x0) / (x1 - x0) * pw; }
+    function YA(a) { return T + (1 - (a - lo) / (hi - lo)) * ph; }
+    function YV(v) { return T + (1 - (v - vlo) / (vhi - vlo)) * ph; }
+
+    ctx.strokeStyle = line; ctx.lineWidth = 1;
+    for (var i = 0; i <= 3; i++) {
+      var y = Math.round(T + ph * (1 - i / 3)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke();
+      ctx.textAlign = "right";
+      if (showA) {
+        ctx.fillStyle = cA; ctx.fillText((lo + (hi - lo) * i / 3).toFixed(0) + " m", L - 8, y + 4);
+      } else {
+        ctx.fillStyle = cV; ctx.fillText((vlo + (vhi - vlo) * i / 3).toFixed(0) + " km/h", L - 8, y + 4);
+      }
+      if (showA && showV) {
+        ctx.textAlign = "left"; ctx.fillStyle = cV;
+        ctx.fillText((vlo + (vhi - vlo) * i / 3).toFixed(0) + " km/h", w - R + 8, y + 4);
+      }
+    }
+    ctx.fillStyle = dim;
     ctx.textAlign = "left"; ctx.fillText("−" + Math.round(x1 - x0) + " m", L, h - 6);
     ctx.textAlign = "right"; ctx.fillText("most", w - R, h - 6);
 
-    ctx.beginPath();
-    win.forEach(function (p, j) { if (j === 0) ctx.moveTo(X(p.d), Y(p.a)); else ctx.lineTo(X(p.d), Y(p.a)); });
-    var lastP = win[win.length - 1];
-    ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.stroke();
-    ctx.lineTo(X(lastP.d), T + ph); ctx.lineTo(X(win[0].d), T + ph); ctx.closePath();
-    ctx.globalAlpha = 0.15; ctx.fillStyle = accent; ctx.fill(); ctx.globalAlpha = 1;
-    ctx.beginPath(); ctx.arc(X(lastP.d), Y(lastP.a), 5, 0, Math.PI * 2); ctx.fillStyle = accent; ctx.fill();
+    function series(key, Y, color, fill) {
+      var started = false, lastX = null, lastY = null, firstX = null;
+      ctx.beginPath();
+      win.forEach(function (p) {
+        var val = p[key];
+        if (val === null || val === undefined || isNaN(val)) { started = false; return; }
+        var px = X(p.d), py = Y(val);
+        if (!started) { ctx.moveTo(px, py); started = true; if (firstX === null) firstX = px; } else ctx.lineTo(px, py);
+        lastX = px; lastY = py;
+      });
+      if (lastX === null) return;
+      ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.stroke();
+      if (fill) {
+        ctx.lineTo(lastX, T + ph); ctx.lineTo(firstX, T + ph); ctx.closePath();
+        ctx.globalAlpha = 0.15; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+      }
+      ctx.beginPath(); ctx.arc(lastX, lastY, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+    }
+    if (showA) series("a", YA, cA, !showV);
+    if (showV) series("v", YV, cV, !showA);
+  }
+
+  function syncSeg() {
+    var bs = document.querySelectorAll("#seg button");
+    for (var i = 0; i < bs.length; i++) {
+      var on = bs[i].getAttribute("data-mode") === chartMode;
+      bs[i].className = on ? "on" : "";
+      bs[i].setAttribute("aria-pressed", on ? "true" : "false");
+    }
   }
 
   function track(p) {
@@ -267,7 +321,7 @@
       }
     }
     if (smoothAlt !== null && (pts.length === 0 || dist - pts[pts.length - 1].d >= 5)) {
-      pts.push({ d: dist, a: smoothAlt });
+      pts.push({ d: dist, a: smoothAlt, v: (c.speed !== null && !isNaN(c.speed)) ? c.speed * 3.6 : null });
       if (pts.length > 800) pts.shift();
     }
     $("trip").textContent = dist >= 1000 ? (dist / 1000).toFixed(2) + " km" : Math.round(dist) + " m";
@@ -373,6 +427,15 @@
     drawChart();
   });
   window.addEventListener("resize", drawChart);
+  $("seg").addEventListener("click", function (e) {
+    var m = e.target.getAttribute && e.target.getAttribute("data-mode");
+    if (!m) return;
+    chartMode = m;
+    try { localStorage.setItem("chartMode", m); } catch (err) {}
+    syncSeg();
+    drawChart();
+  });
+  syncSeg();
   drawChart();
   $("copyBtn").addEventListener("click", function () {
     if (!last) { showMsg("Még nincs koordináta, amit másolni lehetne.", true); return; }
