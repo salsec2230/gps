@@ -56,6 +56,13 @@
   .msg.bad { border-color: var(--bad); }
   .foot { margin-top: 16px; font-size: 14px; color: var(--dim); line-height: 1.5; }
 
+  .slope { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .slope svg { width: 150px; max-width: 45%; height: auto; flex: none; }
+  .slope .kind { font-size: 20px; font-weight: 600; margin-top: 6px; }
+  #slopeG { transform-origin: 60px 40px; transition: transform .5s; }
+  .chart { grid-column: 1 / -1; }
+  .chart canvas { width: 100%; height: 190px; display: block; margin-top: 10px; }
+
   @media (max-width: 800px) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .tile.hero { grid-row: auto; }
@@ -91,6 +98,31 @@
     </div>
   </section>
 
+  <section class="tile wide slope">
+    <div>
+      <div class="label">Emelkedő / lejtő</div>
+      <div class="value"><span id="grade">–</span><span class="unit">%</span></div>
+      <div class="kind" id="slopeKind">Várakozás mozgásra</div>
+    </div>
+    <svg viewBox="0 0 120 60" aria-hidden="true">
+      <line x1="6" y1="40" x2="114" y2="40" stroke="var(--line)" stroke-width="2" stroke-dasharray="4 4"/>
+      <g id="slopeG" style="color: var(--dim)">
+        <line x1="10" y1="40" x2="110" y2="40" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+        <rect x="46" y="22" width="30" height="13" rx="5" fill="currentColor"/>
+        <circle cx="53" cy="37" r="3.5" fill="var(--bg)"/>
+        <circle cx="69" cy="37" r="3.5" fill="var(--bg)"/>
+      </g>
+    </svg>
+  </section>
+
+  <section class="tile chart">
+    <div class="heading-row">
+      <div class="label">Magasság az úton (utolsó 2 km)</div>
+      <div class="label">Megtett út: <span id="trip">0 m</span></div>
+    </div>
+    <canvas id="chart" aria-label="Magasság grafikon"></canvas>
+  </section>
+
   <section class="tile">
     <div class="label">Szélesség</div>
     <div class="value" id="lat">–</div>
@@ -121,19 +153,127 @@
 <div class="actions">
   <button class="primary" id="startBtn" type="button">GPS indítása</button>
   <button id="stopBtn" type="button" hidden>Leállítás</button>
-  <button id="resetBtn" type="button">Min/Max nullázása</button>
+  <button id="resetBtn" type="button">Nullázás</button>
   <button id="copyBtn" type="button">Koordináta másolása</button>
 </div>
 
 <div class="msg" id="msg" hidden></div>
 
-<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat.</p>
+<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi.</p>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var watchId = null, last = null, altMin = null, altMax = null, wakeLock = null;
   var dirs = ["É", "ÉK", "K", "DK", "D", "DNy", "Ny", "ÉNy"];
+
+  // Útvonal-állapot: simított magasság, megtett út, grafikon pontjai
+  var prev = null, dist = 0, smoothAlt = null, gradeS = null, pts = [];
+  var WINDOW_M = 2000, GRADE_BASE_M = 60, FLAT_PCT = 2;
+
+  function hav(a, b, c, d) {
+    var R = 6371000, t = Math.PI / 180;
+    var dl = (c - a) * t, dn = (d - b) * t;
+    var x = Math.pow(Math.sin(dl / 2), 2) + Math.cos(a * t) * Math.cos(c * t) * Math.pow(Math.sin(dn / 2), 2);
+    return 2 * R * Math.asin(Math.sqrt(x));
+  }
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function updateSlope() {
+    var ref = null;
+    for (var i = pts.length - 1; i >= 0; i--) {
+      if (dist - pts[i].d >= GRADE_BASE_M) { ref = pts[i]; break; }
+    }
+    var g = $("grade"), k = $("slopeKind"), s = $("slopeG");
+    if (smoothAlt === null) {
+      g.textContent = "–"; k.textContent = "Nincs magasságadat"; s.style.transform = "rotate(0deg)"; s.style.color = css("--dim");
+      return;
+    }
+    if (!ref) {
+      g.textContent = "–"; k.textContent = "Várakozás mozgásra"; return;
+    }
+    var raw = (smoothAlt - ref.a) / (dist - ref.d) * 100;
+    raw = Math.max(-40, Math.min(40, raw));
+    gradeS = gradeS === null ? raw : gradeS + 0.4 * (raw - gradeS);
+    var shown = Math.abs(gradeS) < 0.05 ? 0 : gradeS;
+    g.textContent = (shown > 0 ? "+" : "") + shown.toFixed(1);
+    var ang = Math.atan(gradeS / 100) * 180 / Math.PI * 2.5;
+    ang = Math.max(-35, Math.min(35, ang));
+    s.style.transform = "rotate(" + (-ang) + "deg)";
+    if (gradeS > FLAT_PCT) { k.textContent = "Emelkedő"; s.style.color = css("--warn"); }
+    else if (gradeS < -FLAT_PCT) { k.textContent = "Lejtő"; s.style.color = css("--accent"); }
+    else { k.textContent = "Sík"; s.style.color = css("--ok"); }
+  }
+
+  function drawChart() {
+    var cv = $("chart"), w = cv.clientWidth, h = 190, r = window.devicePixelRatio || 1;
+    if (!w) return;
+    cv.width = Math.round(w * r); cv.height = Math.round(h * r);
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(r, 0, 0, r, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    var dim = css("--dim"), line = css("--line"), accent = css("--accent");
+    ctx.font = "13px ui-monospace, Menlo, Consolas, monospace";
+
+    var win = pts.filter(function (p) { return p.d >= dist - WINDOW_M; });
+    if (win.length < 2) {
+      ctx.fillStyle = dim; ctx.textAlign = "center";
+      ctx.fillText("A grafikon haladás közben rajzolódik", w / 2, h / 2);
+      return;
+    }
+    var x0 = Math.min(win[0].d, dist - 100), x1 = dist;
+    var lo = Infinity, hi = -Infinity;
+    win.forEach(function (p) { if (p.a < lo) lo = p.a; if (p.a > hi) hi = p.a; });
+    if (hi - lo < 10) { var mid = (hi + lo) / 2; lo = mid - 5; hi = mid + 5; }
+    var pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+
+    var L = 52, R = 12, T = 10, B = 24, pw = w - L - R, ph = h - T - B;
+    function X(d) { return L + (d - x0) / (x1 - x0) * pw; }
+    function Y(a) { return T + (1 - (a - lo) / (hi - lo)) * ph; }
+
+    ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.fillStyle = dim; ctx.textAlign = "right";
+    for (var i = 0; i <= 3; i++) {
+      var v = lo + (hi - lo) * i / 3, y = Math.round(Y(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke();
+      ctx.fillText(v.toFixed(0) + " m", L - 8, y + 4);
+    }
+    ctx.textAlign = "left"; ctx.fillText("−" + Math.round(x1 - x0) + " m", L, h - 6);
+    ctx.textAlign = "right"; ctx.fillText("most", w - R, h - 6);
+
+    ctx.beginPath();
+    win.forEach(function (p, j) { if (j === 0) ctx.moveTo(X(p.d), Y(p.a)); else ctx.lineTo(X(p.d), Y(p.a)); });
+    var lastP = win[win.length - 1];
+    ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.stroke();
+    ctx.lineTo(X(lastP.d), T + ph); ctx.lineTo(X(win[0].d), T + ph); ctx.closePath();
+    ctx.globalAlpha = 0.15; ctx.fillStyle = accent; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(X(lastP.d), Y(lastP.a), 5, 0, Math.PI * 2); ctx.fillStyle = accent; ctx.fill();
+  }
+
+  function track(p) {
+    var c = p.coords;
+    if (c.altitude !== null && !isNaN(c.altitude)) {
+      smoothAlt = smoothAlt === null ? c.altitude : smoothAlt + 0.3 * (c.altitude - smoothAlt);
+    }
+    if (c.accuracy <= 50) {
+      if (!prev) {
+        prev = { lat: c.latitude, lon: c.longitude };
+      } else {
+        var s = hav(prev.lat, prev.lon, c.latitude, c.longitude);
+        var moving = (c.speed === null || isNaN(c.speed)) ? s >= 5 : c.speed > 0.8;
+        if (moving && s >= 3) {
+          dist += s;
+          prev = { lat: c.latitude, lon: c.longitude };
+        }
+      }
+    }
+    if (smoothAlt !== null && (pts.length === 0 || dist - pts[pts.length - 1].d >= 5)) {
+      pts.push({ d: dist, a: smoothAlt });
+      if (pts.length > 800) pts.shift();
+    }
+    $("trip").textContent = dist >= 1000 ? (dist / 1000).toFixed(2) + " km" : Math.round(dist) + " m";
+    updateSlope();
+    drawChart();
+  }
 
   function setStatus(kind, text) {
     $("dot").className = "dot " + kind;
@@ -178,6 +318,7 @@
     $("acc").textContent = fmt(c.accuracy, 0);
     $("coords").textContent = fmt(c.latitude, 6) + ", " + fmt(c.longitude, 6);
     $("stamp").textContent = new Date(p.timestamp).toLocaleTimeString("hu-HU");
+    track(p);
 
     setStatus(c.accuracy <= 20 ? "ok" : "warn", c.accuracy <= 20 ? "Jó jel" : "Gyenge jel");
     showMsg("");
@@ -223,7 +364,16 @@
     altMin = altMax = null;
     $("altMin").textContent = "–";
     $("altMax").textContent = "–";
+    prev = null; dist = 0; pts = []; gradeS = null;
+    $("trip").textContent = "0 m";
+    $("grade").textContent = "–";
+    $("slopeKind").textContent = "Várakozás mozgásra";
+    $("slopeG").style.transform = "rotate(0deg)";
+    $("slopeG").style.color = css("--dim");
+    drawChart();
   });
+  window.addEventListener("resize", drawChart);
+  drawChart();
   $("copyBtn").addEventListener("click", function () {
     if (!last) { showMsg("Még nincs koordináta, amit másolni lehetne.", true); return; }
     var t = last.coords.latitude.toFixed(6) + ", " + last.coords.longitude.toFixed(6);
