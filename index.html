@@ -120,7 +120,7 @@
 
   <section class="tile chart">
     <div class="heading-row">
-      <div class="label">Grafikon (utolsó 2 km)</div>
+      <div class="label">Grafikon (az út, legfeljebb az utolsó 50 km)</div>
       <div class="label">Megtett út: <span id="trip">0 m</span></div>
     </div>
     <div class="seg" id="seg">
@@ -177,7 +177,7 @@
 
   // Útvonal-állapot: simított magasság, megtett út, grafikon pontjai
   var prev = null, dist = 0, smoothAlt = null, gradeS = null, pts = [];
-  var WINDOW_M = 2000, GRADE_BASE_M = 60, FLAT_PCT = 2;
+  var WINDOW_M = 50000, GRADE_BASE_M = 60, FLAT_PCT = 2;
 
   function hav(a, b, c, d) {
     var R = 6371000, t = Math.PI / 180;
@@ -269,7 +269,7 @@
       }
     }
     ctx.fillStyle = dim;
-    ctx.textAlign = "left"; ctx.fillText("−" + Math.round(x1 - x0) + " m", L, h - 6);
+    ctx.textAlign = "left"; var span = x1 - x0; ctx.fillText("−" + (span >= 1000 ? (span / 1000).toFixed(1) + " km" : Math.round(span) + " m"), L, h - 6);
     ctx.textAlign = "right"; ctx.fillText("most", w - R, h - 6);
 
     function series(key, Y, color, fill) {
@@ -322,7 +322,7 @@
     }
     if (smoothAlt !== null && (pts.length === 0 || dist - pts[pts.length - 1].d >= 5)) {
       pts.push({ d: dist, a: smoothAlt, v: (c.speed !== null && !isNaN(c.speed)) ? c.speed * 3.6 : null });
-      if (pts.length > 800) pts.shift();
+      if (pts.length > 12000) pts.shift();
     }
     $("trip").textContent = dist >= 1000 ? (dist / 1000).toFixed(2) + " km" : Math.round(dist) + " m";
     updateSlope();
