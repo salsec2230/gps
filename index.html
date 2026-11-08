@@ -56,7 +56,14 @@
   .msg.bad { border-color: var(--bad); }
   .foot { margin-top: 16px; font-size: 14px; color: var(--dim); line-height: 1.5; }
 
-  .slope { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  button.small { min-height: 44px; padding: 0 18px; font-size: 16px; }
+  .slope-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .accel { margin-top: 16px; }
+  .accel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+  .accel-head .num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 20px; letter-spacing: 0; text-transform: none; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .bar { position: relative; height: 24px; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .bar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--dim); z-index: 1; }
+  .bar .fill { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; background: var(--ok); transition: left .3s, width .3s, background .3s; }
   .slope svg { width: 150px; max-width: 45%; height: auto; flex: none; }
   .slope .kind { font-size: 20px; font-weight: 600; margin-top: 6px; }
   #slopeG { transform-origin: 60px 40px; transition: transform .5s; }
@@ -76,7 +83,7 @@
 <body>
 <header>
   <h1>GPS műszerfal</h1>
-  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
+  <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
 
 <main class="grid">
@@ -102,6 +109,7 @@
   </section>
 
   <section class="tile wide slope">
+    <div class="slope-top">
     <div>
       <div class="label">Emelkedő / lejtő</div>
       <div class="value"><span id="grade">–</span><span class="unit">%</span></div>
@@ -116,6 +124,11 @@
         <circle cx="69" cy="37" r="3.5" fill="var(--bg)"/>
       </g>
     </svg>
+    </div>
+    <div class="accel">
+      <div class="accel-head"><span>◀ Lassulás</span><span class="num" id="accNum">–</span><span>Gyorsulás ▶</span></div>
+      <div class="bar" aria-hidden="true"><div class="mid"></div><div class="fill" id="accFill"></div></div>
+    </div>
   </section>
 
   <section class="tile chart">
@@ -159,7 +172,6 @@
 </main>
 
 <div class="actions">
-  <button class="primary" id="startBtn" type="button">GPS indítása</button>
   <button id="stopBtn" type="button" hidden>Leállítás</button>
   <button id="resetBtn" type="button">Nullázás</button>
   <button id="copyBtn" type="button">Koordináta másolása</button>
@@ -167,7 +179,7 @@
 
 <div class="msg" id="msg" hidden></div>
 
-<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi.</p>
+<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a sebesség változásából számolódik (±3 m/s² a sáv széle). A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest.</p>
 
 <script>
 (function () {
@@ -303,6 +315,33 @@
     }
   }
 
+  var prevSpd = null, prevT = null, accS = 0, ACC_FULL = 3;
+  function resetAccel() {
+    prevSpd = null; prevT = null; accS = 0;
+    $("accNum").textContent = "–";
+    var f = $("accFill"); f.style.left = "50%"; f.style.width = "0";
+  }
+  function updateAccel(p) {
+    var c = p.coords;
+    if (c.speed === null || isNaN(c.speed)) { resetAccel(); return; }
+    if (prevT !== null) {
+      var dt = (p.timestamp - prevT) / 1000;
+      if (dt >= 0.2 && dt <= 5) {
+        var a = (c.speed - prevSpd) / dt;
+        a = Math.max(-8, Math.min(8, a));
+        accS += 0.4 * (a - accS);
+      } else if (dt > 5) { accS = 0; }
+    }
+    prevSpd = c.speed; prevT = p.timestamp;
+    var v = Math.abs(accS) < 0.05 ? 0 : accS;
+    $("accNum").textContent = (v > 0 ? "+" : "") + v.toFixed(1) + " m/s²";
+    var pct = Math.min(50, Math.abs(v) / ACC_FULL * 50);
+    var f = $("accFill");
+    f.style.width = pct + "%";
+    f.style.left = (v >= 0 ? 50 : 50 - pct) + "%";
+    f.style.background = v >= 0 ? css("--ok") : css("--bad");
+  }
+
   function track(p) {
     var c = p.coords;
     if (c.altitude !== null && !isNaN(c.altitude)) {
@@ -356,7 +395,7 @@
     }
     $("altAcc").textContent = (c.altitudeAccuracy !== null && !isNaN(c.altitudeAccuracy)) ? "±" + fmt(c.altitudeAccuracy, 0) + " m" : "nincs adat";
 
-    $("spd").textContent = (c.speed !== null && !isNaN(c.speed)) ? fmt(c.speed * 3.6, 0) : "–";
+    $("spd").textContent = (c.speed !== null && !isNaN(c.speed)) ? fmt(c.speed * 3.6, c.accuracy <= 20 ? 1 : 0) : "–";
 
     if (c.heading !== null && !isNaN(c.heading)) {
       $("hdg").textContent = fmt(c.heading, 0) + "°";
@@ -373,6 +412,7 @@
     $("coords").textContent = fmt(c.latitude, 6) + ", " + fmt(c.longitude, 6);
     $("stamp").textContent = new Date(p.timestamp).toLocaleTimeString("hu-HU");
     track(p);
+    updateAccel(p);
 
     setStatus(c.accuracy <= 20 ? "ok" : "warn", c.accuracy <= 20 ? "Jó jel" : "Gyenge jel");
     showMsg("");
@@ -419,6 +459,7 @@
     $("altMin").textContent = "–";
     $("altMax").textContent = "–";
     prev = null; dist = 0; pts = []; gradeS = null;
+    resetAccel();
     $("trip").textContent = "0 m";
     $("grade").textContent = "–";
     $("slopeKind").textContent = "Várakozás mozgásra";
