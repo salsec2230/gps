@@ -61,9 +61,9 @@
   .accel { margin-top: 16px; }
   .accel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
   .accel-head .num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 20px; letter-spacing: 0; text-transform: none; color: var(--fg); font-variant-numeric: tabular-nums; }
-  .bar { position: relative; height: 24px; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .bar { position: relative; height: 32px; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
   .bar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--dim); z-index: 1; }
-  .bar .fill { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; background: var(--ok); transition: left .3s, width .3s, background .3s; }
+  .bar .fill { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; background: var(--ok); transition: left .12s linear, width .12s linear; }
   .slope svg { width: 150px; max-width: 45%; height: auto; flex: none; }
   .slope .kind { font-size: 20px; font-weight: 600; margin-top: 6px; }
   #slopeG { transform-origin: 60px 40px; transition: transform .5s; }
@@ -128,6 +128,7 @@
     <div class="accel">
       <div class="accel-head"><span>◀ Lassulás</span><span class="num" id="accNum">–</span><span>Gyorsulás ▶</span></div>
       <div class="bar" aria-hidden="true"><div class="mid"></div><div class="fill" id="accFill"></div></div>
+      <div class="sub" id="accInfo" style="font-size:13px">Várakozás sebességadatra</div>
     </div>
   </section>
 
@@ -179,7 +180,7 @@
 
 <div class="msg" id="msg" hidden></div>
 
-<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a sebesség változásából számolódik (±3 m/s² a sáv széle). A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest.</p>
+<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 3 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest.</p>
 
 <script>
 (function () {
@@ -315,32 +316,63 @@
     }
   }
 
-  var prevSpd = null, prevT = null, accS = 0, ACC_FULL = 3;
-  function resetAccel() {
-    prevSpd = null; prevT = null; accS = 0;
-    $("accNum").textContent = "–";
-    var f = $("accFill"); f.style.left = "50%"; f.style.width = "0";
-  }
-  function updateAccel(p) {
-    var c = p.coords;
-    if (c.speed === null || isNaN(c.speed)) { resetAccel(); return; }
-    if (prevT !== null) {
-      var dt = (p.timestamp - prevT) / 1000;
-      if (dt >= 0.2 && dt <= 5) {
-        var a = (c.speed - prevSpd) / dt;
-        a = Math.max(-8, Math.min(8, a));
-        accS += 0.4 * (a - accS);
-      } else if (dt > 5) { accS = 0; }
+  var ACC_FULL = 3, ACC_DEAD = 0.1;
+  var samples = [], lastSampleT = 0, accTarget = 0, accDisp = 0, speedPrev = null;
+
+  // Sebesség: GPS-érték, ennek hiányában a két pozíció közötti elmozdulásból.
+  function speedOf(p) {
+    var c = p.coords, now = Date.now(), v = null, src = "";
+    if (c.speed !== null && !isNaN(c.speed)) { v = c.speed; src = "GPS sebesség"; }
+    else if (speedPrev && c.accuracy <= 50) {
+      var dt = (now - speedPrev.t) / 1000;
+      if (dt >= 0.3 && dt <= 10) { v = hav(speedPrev.lat, speedPrev.lon, c.latitude, c.longitude) / dt; src = "pozícióváltozás"; }
     }
-    prevSpd = c.speed; prevT = p.timestamp;
-    var v = Math.abs(accS) < 0.05 ? 0 : accS;
-    $("accNum").textContent = (v > 0 ? "+" : "") + v.toFixed(1) + " m/s²";
-    var pct = Math.min(50, Math.abs(v) / ACC_FULL * 50);
+    if (c.accuracy <= 50) speedPrev = { lat: c.latitude, lon: c.longitude, t: now };
+    return { v: v, src: src, t: now };
+  }
+
+  function setBar(v) {
+    var shown = Math.abs(v) < ACC_DEAD ? 0 : v;
+    $("accNum").textContent = (shown > 0 ? "+" : "") + shown.toFixed(1) + " m/s²";
+    var pct = Math.min(50, Math.abs(shown) / ACC_FULL * 50);
     var f = $("accFill");
     f.style.width = pct + "%";
-    f.style.left = (v >= 0 ? 50 : 50 - pct) + "%";
-    f.style.background = v >= 0 ? css("--ok") : css("--bad");
+    f.style.left = (shown >= 0 ? 50 : 50 - pct) + "%";
+    f.style.background = shown >= 0 ? css("--ok") : css("--bad");
   }
+
+  function resetAccel() {
+    samples = []; accTarget = 0; accDisp = 0; speedPrev = null; lastSampleT = 0;
+    $("accNum").textContent = "–";
+    var f = $("accFill"); f.style.left = "50%"; f.style.width = "0";
+    $("accInfo").textContent = "Várakozás sebességadatra";
+  }
+
+  // Meredekség a legutóbbi ~3 másodperc mintáira illesztett egyenesből (kevésbé zajos, mint két minta különbsége).
+  function updateAccel(sp) {
+    if (sp.v === null) { samples = []; accTarget = 0; $("accInfo").textContent = "Nincs sebességadat"; return; }
+    var t = sp.t / 1000;
+    samples.push({ t: t, v: sp.v }); lastSampleT = sp.t;
+    while (samples.length && samples[0].t < t - 3) samples.shift();
+    var n = samples.length, span = n >= 2 ? samples[n - 1].t - samples[0].t : 0;
+    if (span >= 1) {
+      var tm = 0, vm = 0, i;
+      for (i = 0; i < n; i++) { tm += samples[i].t; vm += samples[i].v; }
+      tm /= n; vm /= n;
+      var num = 0, den = 0;
+      for (i = 0; i < n; i++) { num += (samples[i].t - tm) * (samples[i].v - vm); den += Math.pow(samples[i].t - tm, 2); }
+      accTarget = Math.max(-8, Math.min(8, num / den));
+    }
+    $("accInfo").textContent = "Forrás: " + sp.src + " · " + n + " minta / " + span.toFixed(1) + " mp";
+  }
+
+  // Folyamatos, sima kijelzés: 10-szer másodpercenként közelít a célértékhez.
+  setInterval(function () {
+    var idle = watchId === null || lastSampleT === 0 || Date.now() - lastSampleT > 3500;
+    var target = idle ? 0 : accTarget;
+    accDisp += 0.3 * (target - accDisp);
+    if (watchId !== null && lastSampleT !== 0) setBar(accDisp);
+  }, 100);
 
   function track(p) {
     var c = p.coords;
@@ -395,7 +427,8 @@
     }
     $("altAcc").textContent = (c.altitudeAccuracy !== null && !isNaN(c.altitudeAccuracy)) ? "±" + fmt(c.altitudeAccuracy, 0) + " m" : "nincs adat";
 
-    $("spd").textContent = (c.speed !== null && !isNaN(c.speed)) ? fmt(c.speed * 3.6, c.accuracy <= 20 ? 1 : 0) : "–";
+    var sp = speedOf(p);
+    $("spd").textContent = sp.v !== null ? fmt(sp.v * 3.6, c.accuracy <= 20 ? 1 : 0) : "–";
 
     if (c.heading !== null && !isNaN(c.heading)) {
       $("hdg").textContent = fmt(c.heading, 0) + "°";
@@ -412,7 +445,7 @@
     $("coords").textContent = fmt(c.latitude, 6) + ", " + fmt(c.longitude, 6);
     $("stamp").textContent = new Date(p.timestamp).toLocaleTimeString("hu-HU");
     track(p);
-    updateAccel(p);
+    updateAccel(sp);
 
     setStatus(c.accuracy <= 20 ? "ok" : "warn", c.accuracy <= 20 ? "Jó jel" : "Gyenge jel");
     showMsg("");
