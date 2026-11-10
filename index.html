@@ -397,8 +397,8 @@
 
   // --- Város és utcák (OpenStreetMap: Overpass + Nominatim) ---
   var LOOK_M = 200, ROAD_HALF_M = 400, ROAD_REFETCH_M = 150;
-  var ROAD = { ways: [], nodeIdx: {}, center: null, fetching: false, lastTry: 0, failed: false, loaded: false, err: "", host: "", fails: 0 };
-  var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
+  var ROAD = { ways: [], nodeIdx: {}, center: null, fetching: false, lastTry: 0, failed: false, loaded: false, err: "", host: "", fails: 0, pref: "overpass", refetchM: 150 };
+  var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.openstreetmap.fr/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
   var curWayId = null, lastHeading = null, roadLast = null;
   var CITY = { name: "", road: "", pos: null, busy: false, lastTry: 0 };
 
@@ -457,15 +457,51 @@
     });
   }
 
-  function loadRoads(lat, lon) {
-    ROAD.fetching = true; ROAD.lastTry = Date.now();
+  // 1. forrás: Overpass (több tükör). Az Overpass-JSON közvetlenül használható.
+  function viaOverpass(lat, lon) {
     var dlat = ROAD_HALF_M / 111320, dlon = dlat / Math.cos(lat * Math.PI / 180);
     var bbox = [lat - dlat, lon - dlon, lat + dlat, lon + dlon].map(function (v) { return v.toFixed(5); }).join(",");
     var q = '[out:json][timeout:25];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street)$"]["name"](' + bbox + ');out geom qt;';
     var enc = encodeURIComponent(q);
-    firstOf(OVERPASS.map(function (u) { return u + "?data=" + enc; }), 20000, 4000)
-      .then(function (r) { buildRoads(r.json, lat, lon); ROAD.host = r.host; ROAD.err = ""; ROAD.fails = 0; })
-      .catch(function (e) { ROAD.failed = true; ROAD.fails++; ROAD.err = (e && e.message) || "ismeretlen hiba"; })
+    return firstOf(OVERPASS.map(function (u) { return u + "?data=" + enc; }), 20000, 3000)
+      .then(function (r) { return { json: r.json, host: r.host, refetchM: 150, pref: "overpass" }; });
+  }
+
+  // 2. forrás: az OpenStreetMap saját API-ja (rövid kérés, nyers adat), a szükséges utakat a böngésző szűri ki.
+  var ROAD_OK = { motorway: 1, trunk: 1, primary: 1, secondary: 1, tertiary: 1, unclassified: 1, residential: 1, living_street: 1 };
+  function viaOsmApi(lat, lon, half) {
+    half = half || 300;
+    var dlat = half / 111320, dlon = dlat / Math.cos(lat * Math.PI / 180);
+    var bbox = [lon - dlon, lat - dlat, lon + dlon, lat + dlat].map(function (v) { return v.toFixed(5); }).join(",");
+    return fetchJson("https://api.openstreetmap.org/api/0.6/map.json?bbox=" + bbox, 25000).then(function (j) {
+      var nodes = {}, out = [];
+      (j.elements || []).forEach(function (el) { if (el.type === "node") nodes[el.id] = { lat: el.lat, lon: el.lon }; });
+      (j.elements || []).forEach(function (el) {
+        if (el.type !== "way" || !el.tags || !el.tags.name || !ROAD_OK[el.tags.highway] || !el.nodes) return;
+        var g = el.nodes.map(function (id) { return nodes[id]; });
+        if (g.some(function (x) { return !x; })) return;
+        out.push({ type: "way", id: el.id, nodes: el.nodes, geometry: g, tags: el.tags });
+      });
+      return { json: { elements: out }, host: "api.openstreetmap.org", refetchM: Math.max(40, half - 200), pref: "api" };
+    }, function (e) {
+      // 400: túl sok adat a területen, kisebb területtel újrapróbáljuk
+      if (/http 400/.test(e.message) && half > 150) return viaOsmApi(lat, lon, 150);
+      throw e;
+    });
+  }
+
+  function fetchRoadData(lat, lon) {
+    var first = ROAD.pref === "api" ? viaOsmApi : viaOverpass, second = ROAD.pref === "api" ? viaOverpass : viaOsmApi;
+    return first(lat, lon).catch(function (e1) {
+      return second(lat, lon).catch(function (e2) { throw new Error(e1.message + " | " + e2.message); });
+    });
+  }
+
+  function loadRoads(lat, lon) {
+    ROAD.fetching = true; ROAD.lastTry = Date.now();
+    fetchRoadData(lat, lon)
+      .then(function (r) { buildRoads(r.json, lat, lon); ROAD.host = r.host; ROAD.pref = r.pref; ROAD.refetchM = r.refetchM; ROAD.err = ""; ROAD.fails = 0; })
+      .catch(function (e) { ROAD.failed = true; ROAD.fails++; ROAD.err = ((e && e.message) || "ismeretlen hiba").slice(0, 260); })
       .then(function () { ROAD.fetching = false; roadRefresh(); });
   }
 
@@ -575,7 +611,7 @@
     if (c.accuracy > 50) return;
     roadLast = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, hdg: lastHeading };
     var now = Date.now();
-    var far = !ROAD.center || hav(ROAD.center.lat, ROAD.center.lon, c.latitude, c.longitude) > ROAD_REFETCH_M;
+    var far = !ROAD.center || hav(ROAD.center.lat, ROAD.center.lon, c.latitude, c.longitude) > ROAD.refetchM;
     if (far && !ROAD.fetching && now - ROAD.lastTry > (ROAD.failed ? Math.min(60000, 8000 * ROAD.fails) : 4000)) loadRoads(c.latitude, c.longitude);
     if (!CITY.name && !CITY.pos) $("cityName").textContent = "Város keresése…";
     var needCity = !CITY.pos || hav(CITY.pos.lat, CITY.pos.lon, c.latitude, c.longitude) > (ROAD.loaded ? 800 : 40);
