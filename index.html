@@ -105,7 +105,7 @@
         <div class="side left"><div class="sname" id="crossL">–</div><div class="sbar"><div class="sfill" id="barL"></div></div><div class="sdist" id="distL">&nbsp;</div></div>
         <div class="side right"><div class="sname" id="crossR">–</div><div class="sbar"><div class="sfill" id="barR"></div></div><div class="sdist" id="distR">&nbsp;</div></div>
       </div>
-      <div class="here"><div class="city" id="cityName">Indítsd el a GPS-t</div><div class="street" id="streetName">–</div></div>
+      <div class="here"><div class="city" id="cityName">Indítsd el a GPS-t</div><div class="street" id="streetName">–</div><div class="sub" id="roadInfo" style="font-size:13px">&nbsp;</div></div>
     </div>
     <div>
     <div class="label">GPS magasság (tengerszint felett)</div>
@@ -396,8 +396,9 @@
   }, 100);
 
   // --- Város és utcák (OpenStreetMap: Overpass + Nominatim) ---
-  var LOOK_M = 200, ROAD_R = 600, ROAD_REFETCH_M = 250;
-  var ROAD = { ways: [], nodeIdx: {}, center: null, fetching: false, lastTry: 0, failed: false, loaded: false };
+  var LOOK_M = 200, ROAD_R = 400, ROAD_REFETCH_M = 150;
+  var ROAD = { ways: [], nodeIdx: {}, center: null, fetching: false, lastTry: 0, failed: false, loaded: false, err: "", host: "", fails: 0 };
+  var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
   var curWayId = null, lastHeading = null, roadLast = null;
   var CITY = { name: "", pos: null, busy: false, lastTry: 0 };
 
@@ -432,15 +433,38 @@
     ROAD.loaded = true; ROAD.failed = false;
   }
 
+  // Több nyilvános Overpass-szerver; az első indul, a többi késleltetve vagy hiba esetén azonnal. Az első sikeres válasz nyer.
+  function firstOf(urls, ms, gap) {
+    return new Promise(function (resolve, reject) {
+      var finished = false, failed = 0, errs = [], launched = [], timers = [];
+      function host(u) { return u.split("/")[2]; }
+      function launch(i) {
+        if (finished || i >= urls.length || launched[i]) return;
+        launched[i] = true;
+        fetchJson(urls[i], ms).then(function (j) {
+          if (finished) return;
+          finished = true; timers.forEach(clearTimeout);
+          resolve({ json: j, host: host(urls[i]) });
+        }, function (e) {
+          errs.push(host(urls[i]) + ": " + ((e && e.message) || "hiba"));
+          failed++;
+          if (finished) return;
+          if (failed >= urls.length) { finished = true; timers.forEach(clearTimeout); reject(new Error(errs.join(" | "))); return; }
+          for (var k = 0; k < urls.length; k++) { if (!launched[k]) { launch(k); break; } }
+        });
+      }
+      urls.forEach(function (u, i) { timers.push(setTimeout(function () { launch(i); }, i * gap)); });
+    });
+  }
+
   function loadRoads(lat, lon) {
     ROAD.fetching = true; ROAD.lastTry = Date.now();
-    var q = '[out:json][timeout:20];way(around:' + ROAD_R + ',' + lat.toFixed(5) + ',' + lon.toFixed(5) +
-            ')["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street)$"]["name"];out geom;';
+    var q = '[out:json][timeout:25];way(around:' + ROAD_R + ',' + lat.toFixed(5) + ',' + lon.toFixed(5) +
+            ')["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street)$"]["name"];out geom qt;';
     var enc = encodeURIComponent(q);
-    fetchJson("https://overpass-api.de/api/interpreter?data=" + enc, 15000)
-      .catch(function () { return fetchJson("https://overpass.kumi.systems/api/interpreter?data=" + enc, 15000); })
-      .then(function (j) { buildRoads(j, lat, lon); })
-      .catch(function () { ROAD.failed = true; })
+    firstOf(OVERPASS.map(function (u) { return u + "?data=" + enc; }), 20000, 4000)
+      .then(function (r) { buildRoads(r.json, lat, lon); ROAD.host = r.host; ROAD.err = ""; ROAD.fails = 0; })
+      .catch(function (e) { ROAD.failed = true; ROAD.fails++; ROAD.err = (e && e.message) || "ismeretlen hiba"; })
       .then(function () { ROAD.fetching = false; roadRefresh(); });
   }
 
@@ -530,9 +554,11 @@
     var r = roadLast, sName = $("streetName");
     if (!ROAD.loaded) {
       sName.textContent = ROAD.failed ? "Térképadat nem elérhető" : "Útadatok betöltése…";
+      $("roadInfo").textContent = ROAD.failed ? ROAD.err : "";
       setSide("L", null, true); setSide("R", null, false);
       return;
     }
+    $("roadInfo").textContent = ROAD.ways.length + " útszakasz · " + ROAD.host + (ROAD.failed ? " · frissítés sikertelen: " + ROAD.err : "");
     var n = nearestWay(r.lat, r.lon, r.hdg, r.acc);
     if (!n) { curWayId = null; sName.textContent = "–"; setSide("L", null, true); setSide("R", null, false); return; }
     curWayId = n.w.id;
@@ -548,7 +574,7 @@
     roadLast = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, hdg: lastHeading };
     var now = Date.now();
     var far = !ROAD.center || hav(ROAD.center.lat, ROAD.center.lon, c.latitude, c.longitude) > ROAD_REFETCH_M;
-    if (far && !ROAD.fetching && now - ROAD.lastTry > (ROAD.failed ? 20000 : 5000)) loadRoads(c.latitude, c.longitude);
+    if (far && !ROAD.fetching && now - ROAD.lastTry > (ROAD.failed ? Math.min(60000, 8000 * ROAD.fails) : 4000)) loadRoads(c.latitude, c.longitude);
     if (!CITY.name && !CITY.pos) $("cityName").textContent = "Város keresése…";
     if (!CITY.busy && (!CITY.pos || hav(CITY.pos.lat, CITY.pos.lon, c.latitude, c.longitude) > 800) && now - CITY.lastTry > 15000) loadCity(c.latitude, c.longitude);
     roadRefresh();
