@@ -83,6 +83,9 @@
   .limit { flex: none; width: 62px; height: 62px; border-radius: 50%; border: 7px solid var(--bad); background: #fff; color: #111; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; font-weight: 800; font-size: 26px; line-height: 1; }
   .limit.small { font-size: 21px; }
   .limit[hidden] { display: none; }
+  .limit.est { border-color: var(--warn); border-style: dashed; color: #666; }
+  .tile.overest { border-color: var(--warn); }
+  .tile.overest .value { color: var(--warn); }
   .tile.over { border-color: var(--bad); }
   .tile.over .value { color: var(--bad); }
   .haz { display: flex; flex-wrap: wrap; gap: 8px; min-height: 38px; margin-top: 8px; }
@@ -118,7 +121,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal</h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v14 · 11.11.</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -228,12 +231,17 @@
 </div>
 
 <div class="msg" id="msg" hidden></div>
+<div class="sub" id="errLine" style="color:var(--bad);margin-top:12px"></div>
 
-<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
+<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
+
+<p class="foot" id="ver">Verzió: 11.11-d</p>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
+  window.addEventListener("error", function (e) { var el = document.getElementById("errLine"); if (el) el.textContent = "Hiba: " + e.message + " (" + e.lineno + ". sor)"; });
+  window.addEventListener("unhandledrejection", function (e) { var el = document.getElementById("errLine"); if (el) el.textContent = "Hiba: " + ((e.reason && e.reason.message) || e.reason); });
   var watchId = null, last = null, altMin = null, altMax = null, wakeLock = null;
   var dirs = ["É", "ÉK", "K", "DK", "D", "DNy", "Ny", "ÉNy"];
 
@@ -482,7 +490,7 @@
       if (ot === "yes" || ot === "true" || ot === "1") ow = 1;
       else if (ot === "-1" || ot === "reverse") ow = -1;
       else if (ot !== "no" && (tg.junction === "roundabout" || tg.highway === "motorway")) ow = 1;
-      var w = { id: el.id, name: name, nodes: el.nodes, g: el.geometry, oneway: ow, round: tg.junction === "roundabout", nocar: noCar(tg), max: parseMax(tg.maxspeed), maxf: parseMax(tg["maxspeed:forward"]), maxb: parseMax(tg["maxspeed:backward"]) };
+      var w = { id: el.id, name: name, nodes: el.nodes, g: el.geometry, oneway: ow, round: tg.junction === "roundabout", nocar: noCar(tg), hw: tg.highway || "", max: parseMax(tg.maxspeed), maxf: parseMax(tg["maxspeed:forward"]), maxb: parseMax(tg["maxspeed:backward"]) };
       ways.push(w);
       el.nodes.forEach(function (nid, i) { (idx[nid] = idx[nid] || []).push({ w: w, i: i }); });
     });
@@ -760,11 +768,15 @@
   // Sebességkorlát és túllépés
   var curLimit = null, lastSpdKmh = null;
   function limitFor(w, fwd) { return (fwd ? (w.maxf || w.max) : (w.maxb || w.max)) || null; }
+  function estFor(w) { return w.hw === "residential" ? 50 : (w.hw === "living_street" ? 20 : null); }
+  var curEst = false;
   function applyLimit() {
     var el = $("limit");
     el.hidden = !curLimit;
-    if (curLimit) { el.textContent = curLimit; el.className = "limit" + (String(curLimit).length > 2 ? " small" : ""); }
-    $("spdTile").className = "tile" + (curLimit && lastSpdKmh !== null && lastSpdKmh > curLimit + 0.5 ? " over" : "");
+    if (curLimit) el.textContent = curLimit;
+    el.className = "limit" + (String(curLimit).length > 2 ? " small" : "") + (curEst ? " est" : "");
+    var over = curLimit && lastSpdKmh !== null && lastSpdKmh > curLimit + 0.5;
+    $("spdTile").className = "tile" + (over ? (curEst ? " overest" : " over") : "");
   }
 
   var CTL_TXT = { sig: "lámpa", stop: "Állj!", give: "elsőbbségadás", prio: "elsőbbséged van", sign: "tábla" };
@@ -808,7 +820,7 @@
       setSide("L", null, true); setSide("R", null, false);
       return;
     }
-    $("roadInfo").textContent = ROAD.ways.length + " útszakasz · " + ROAD.host + (ROAD.failed ? " · frissítés sikertelen: " + ROAD.err : "");
+    $("roadInfo").textContent = ROAD.ways.length + " útszakasz · " + Object.keys(ROAD.ctl).length + " tábla/lámpa · " + Object.keys(ROAD.haz).length + " veszélyes pont · " + ROAD.host + (ROAD.failed ? " · frissítés sikertelen: " + ROAD.err : "");
     var n = nearestWay(r.lat, r.lon, r.hdg, r.acc);
     // Szembe haladás: csak friss GPS-pozíciónként számolunk, és két egymás utáni találat kell a riasztáshoz.
     if (r.id !== countedFix) { countedFix = r.id; wrongCnt = (n && n.wrong && r.spd !== null && r.spd > 3) ? wrongCnt + 1 : 0; }
@@ -816,10 +828,15 @@
     curWayId = n.w.id;
     sName.textContent = n.w.name;
     setWarn(wrongCnt >= 2);
-    curLimit = limitFor(n.w, r.hdg === null ? true : angDiff(r.hdg, n.brg) < 90); applyLimit();
+    try {
+      var lim = limitFor(n.w, r.hdg === null ? true : angDiff(r.hdg, n.brg) < 90);
+      curEst = false;
+      if (!lim) { lim = estFor(n.w); curEst = !!lim; }
+      curLimit = lim; applyLimit();
+    } catch (e1) { $("errLine").textContent = "Hiba (korlát): " + e1.message; }
     var res = r.hdg === null ? { L: null, R: null } : crossAhead(n, r.hdg);
     setSide("L", res.L, true); setSide("R", res.R, false);
-    setHaz(r.hdg === null ? [] : hazAhead(n, r.hdg));
+    try { setHaz(r.hdg === null ? [] : hazAhead(n, r.hdg)); } catch (e2) { $("errLine").textContent = "Hiba (veszélyes pontok): " + e2.message; }
   }
 
   // Időjárás (Open-Meteo): fagyveszély-jelzés
@@ -841,6 +858,7 @@
   }
   function loadWx(lat, lon) {
     WX.busy = true; WX.lastTry = Date.now();
+    if (!WX.pos) $("wxInfo").textContent = "Időjárás: lekérés…";
     fetchJson("https://api.open-meteo.com/v1/forecast?latitude=" + lat.toFixed(2) + "&longitude=" + lon.toFixed(2) +
               "&current=temperature_2m,dew_point_2m,precipitation,weather_code&hourly=precipitation&past_hours=3&forecast_hours=1&timezone=auto", 10000)
       .then(function (j) {
@@ -849,7 +867,7 @@
         WX.t = Date.now(); WX.pos = { lat: lat, lon: lon };
         showWx(c, past);
       })
-      .catch(function () { if (!WX.pos) $("wxInfo").textContent = "Időjárás-adat nem elérhető"; })
+      .catch(function (e) { if (!WX.pos) $("wxInfo").textContent = "Időjárás-adat nem elérhető: " + ((e && e.message) || "hiba"); })
       .then(function () { WX.busy = false; });
   }
 
