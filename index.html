@@ -42,6 +42,9 @@
   .unit { font-size: .4em; color: var(--dim); margin-left: .2em; }
   .sub { font-size: 16px; color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums; }
   .wide { grid-column: span 2; }
+  .tgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-top: 8px; }
+  .tl { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  .tv { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 26px; line-height: 1.15; }
 
   .compass { width: 74px; height: 74px; border: 2px solid var(--line); border-radius: 50%; position: relative; flex: none; }
   .compass::before { content: "É"; position: absolute; top: 2px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--dim); }
@@ -128,7 +131,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.12</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.14</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -193,7 +196,7 @@
 
   <section class="tile chart">
     <div class="heading-row">
-      <div class="label">Grafikon (az út, legfeljebb az utolsó 50 km)</div>
+      <div class="label">Grafikon (az út, legfeljebb az utolsó 200 km)</div>
       <div class="label">Megtett út: <span id="trip">0 m</span></div>
     </div>
     <div class="seg" id="seg">
@@ -229,6 +232,20 @@
     <div class="label">Koordináta (másolható)</div>
     <div class="value" id="coords" style="font-size:26px">–</div>
   </section>
+
+  <section class="tile wide" id="timeTile">
+    <div class="label">Idők</div>
+    <div class="tgrid">
+      <div><div class="tl">Menetidő (most)</div><div class="tv" id="tDrvCur">0:00</div></div>
+      <div><div class="tl">Állóidő (most)</div><div class="tv" id="tStopCur">0:00</div></div>
+      <div><div class="tl">Menetidő össz.</div><div class="tv" id="tDrvAll">0:00</div></div>
+      <div><div class="tl">Állóidő össz.</div><div class="tv" id="tStopAll">0:00</div></div>
+      <div><div class="tl">Indulás óta</div><div class="tv" id="tElapsed">0:00</div></div>
+      <div><div class="tl">Átlag (menet)</div><div class="tv" id="tAvg">–</div></div>
+      <div><div class="tl">Átlag (állással)</div><div class="tv" id="tAvgAll">–</div></div>
+      <div><div class="tl">Megtett út</div><div class="tv" id="tDist">0 m</div></div>
+    </div>
+  </section>
 </main>
 
 <div class="actions">
@@ -242,7 +259,7 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.12</p>
+<p class="foot" id="ver">Verzió: 11.14</p>
 
 <script>
 (function () {
@@ -254,7 +271,7 @@
 
   // Útvonal-állapot: simított magasság, megtett út, grafikon pontjai
   var prev = null, dist = 0, smoothAlt = null, gradeS = null, pts = [];
-  var WINDOW_M = 50000, GRADE_BASE_M = 60, FLAT_PCT = 2;
+  var WINDOW_M = 200000, GRADE_BASE_M = 60, FLAT_PCT = 2;
 
   function hav(a, b, c, d) {
     var R = 6371000, t = Math.PI / 180;
@@ -305,6 +322,12 @@
 
     var showA = chartMode !== "spd", showV = chartMode !== "alt";
     var win = pts.filter(function (p) { return p.d >= dist - WINDOW_M; });
+    if (win.length > 1200) {
+      var stp = Math.ceil(win.length / 1200), dec = [];
+      for (var di = 0; di < win.length; di += stp) dec.push(win[di]);
+      if (dec[dec.length - 1] !== win[win.length - 1]) dec.push(win[win.length - 1]);
+      win = dec;
+    }
     if (win.length < 2) {
       ctx.fillStyle = dim; ctx.textAlign = "center";
       ctx.fillText("A grafikon haladás közben rajzolódik", w / 2, h / 2);
@@ -972,9 +995,9 @@
         }
       }
     }
-    if (smoothAlt !== null && (pts.length === 0 || dist - pts[pts.length - 1].d >= 5)) {
+    if (smoothAlt !== null && (pts.length === 0 || dist - pts[pts.length - 1].d >= 10)) {
       pts.push({ d: dist, a: smoothAlt, v: (c.speed !== null && !isNaN(c.speed)) ? c.speed * 3.6 : null });
-      if (pts.length > 12000) pts.shift();
+      if (pts.length > 21000) pts.shift();
     }
     $("trip").textContent = dist >= 1000 ? (dist / 1000).toFixed(2) + " km" : Math.round(dist) + " m";
     updateSlope();
@@ -1074,6 +1097,7 @@
     $("altMin").textContent = "–";
     $("altMax").textContent = "–";
     prev = null; dist = 0; pts = []; gradeS = null;
+    TM.drvCur = TM.stopCur = TM.drvAll = TM.stopAll = 0; TM.t0 = null; TM.state = ""; TM.candN = 0; showTimes();
     resetAccel();
     $("trip").textContent = "0 m";
     $("grade").textContent = "–";
@@ -1102,6 +1126,41 @@
       showMsg("A koordináta: " + t);
     }
   });
+
+  // Időmérés: másodpercenként számol, 3 mp-es késleltetéssel vált menet/állás között.
+  // Egy 2 percnél rövidebb megállás (lámpa) nem szakítja meg a "most" menetidőt.
+  var TM = { drvCur: 0, stopCur: 0, drvAll: 0, stopAll: 0, t0: null, state: "", cand: "", candN: 0 };
+  function fmtT(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, r = sec % 60;
+    return h > 0 ? h + ":" + (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r : m + ":" + (r < 10 ? "0" : "") + r;
+  }
+  function showTimes() {
+    $("tDrvCur").textContent = fmtT(TM.drvCur);
+    $("tStopCur").textContent = fmtT(TM.stopCur);
+    $("tDrvAll").textContent = fmtT(TM.drvAll);
+    $("tStopAll").textContent = fmtT(TM.stopAll);
+    $("tElapsed").textContent = TM.t0 === null ? "0:00" : fmtT((Date.now() - TM.t0) / 1000);
+    var el = TM.t0 === null ? 0 : (Date.now() - TM.t0) / 1000;
+    $("tAvgAll").textContent = el >= 10 && dist > 0 ? (dist / el * 3.6).toFixed(1) + " km/h" : "–";
+    $("tDist").textContent = dist >= 1000 ? (dist / 1000).toFixed(2) + " km" : Math.round(dist) + " m";
+    $("tAvg").textContent = TM.drvAll >= 10 && dist > 0 ? (dist / TM.drvAll * 3.6).toFixed(1) + " km/h" : "–";
+  }
+  setInterval(function () {
+    if (watchId !== null && last && Date.now() - last.timestamp < 15000 && lastSpdKmh !== null) {
+      if (TM.t0 === null) TM.t0 = Date.now();
+      var want = lastSpdKmh >= 3 ? "drive" : "stop";
+      if (!TM.state) { TM.state = want; TM.cand = want; TM.candN = 0; }
+      if (want === TM.state) { TM.candN = 0; }
+      else if (++TM.candN >= 3) { TM.state = want; TM.candN = 0; if (want === "drive") TM.stopCur = 0; }
+      if (TM.state === "drive") { TM.drvCur++; TM.drvAll++; TM.stopCur = 0; }
+      else {
+        TM.stopCur++; TM.stopAll++;
+        if (TM.stopCur >= 120) TM.drvCur = 0;
+      }
+    }
+    showTimes();
+  }, 1000);
 
   setInterval(function () {
     if (!last) return;
