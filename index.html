@@ -105,6 +105,9 @@
   .rsign.pr { background: #1d6fd1; color: #fff; }
   .rsign.mi { background: #f2f2f2; color: #111; }
   .rsign.tk { background: #6b4a2b; color: #fff; }
+  .exits { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: 20px; font-weight: 600; line-height: 1.25; }
+  .exits span { white-space: nowrap; }
+  .exits b { color: var(--accent); margin-right: .3em; }
   .rkind { font-size: .5em; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
   .bang { color: var(--warn); font-weight: 800; margin-right: .3em; }
   .ne { display: inline-block; width: .9em; height: .9em; margin: 0 .35em; vertical-align: -.1em; border-radius: 50%; background: linear-gradient(#fff, #fff) center / 60% 20% no-repeat, var(--bad); }
@@ -131,7 +134,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.15</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.16</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -143,7 +146,7 @@
         <div class="side left"><div class="sname" id="crossL">–</div><div class="sbar"><div class="sfill" id="barL"></div></div><div class="sdist" id="distL">&nbsp;</div></div>
         <div class="side right"><div class="sname" id="crossR">–</div><div class="sbar"><div class="sfill" id="barR"></div></div><div class="sdist" id="distR">&nbsp;</div></div>
       </div>
-      <div class="here"><div class="city" id="cityName">Indítsd el a GPS-t</div><div class="street" id="streetName">–</div><div class="warn" id="warn" hidden>Behajtani tilos (egyirányú utca)</div><div class="haz" id="haz"></div><div class="sub" id="roadInfo" style="font-size:13px">&nbsp;</div><div class="sub" id="wxInfo" style="font-size:13px"></div></div>
+      <div class="here"><div class="city" id="cityName">Indítsd el a GPS-t</div><div class="street" id="streetName">–</div><div class="exits" id="exits" hidden></div><div class="warn" id="warn" hidden>Behajtani tilos (egyirányú utca)</div><div class="haz" id="haz"></div><div class="sub" id="roadInfo" style="font-size:13px">&nbsp;</div><div class="sub" id="wxInfo" style="font-size:13px"></div></div>
     </div>
     <div>
     <div class="label">GPS magasság</div>
@@ -259,14 +262,14 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.15</p>
+<p class="foot" id="ver">Verzió: 11.16</p>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   window.addEventListener("error", function (e) { var el = document.getElementById("errLine"); if (el) el.textContent = "Hiba: " + e.message + " (" + e.lineno + ". sor)"; });
   window.addEventListener("unhandledrejection", function (e) { var el = document.getElementById("errLine"); if (el) el.textContent = "Hiba: " + ((e.reason && e.reason.message) || e.reason); });
-  var watchId = null, last = null, altMin = null, altMax = null, wakeLock = null;
+  var watchId = null, last = null, lastFixAt = 0, tmPrevDist = 0, altMin = null, altMax = null, wakeLock = null;
   var dirs = ["É", "ÉK", "K", "DK", "D", "DNy", "Ny", "ÉNy"];
 
   // Útvonal-állapot: simított magasság, megtett út, grafikon pontjai
@@ -486,6 +489,7 @@
     });
   }
 
+  function wideNow() { return ruralMode || (lastSpdKmh !== null && lastSpdKmh > 60); }
   var RURAL_HW = /^(motorway|trunk|primary|secondary|tertiary|unclassified|track|motorway_link|trunk_link)$/;
   var KIND = { motorway: "Autópálya", trunk: "Autóút", primary: "Főút", secondary: "Főút", tertiary: "Mellékút", unclassified: "Mellékút", track: "Földút", motorway_link: "Le-/felhajtó", trunk_link: "Le-/felhajtó" };
   var BADGE = { motorway: "mw", motorway_link: "mw", trunk: "tr", trunk_link: "tr", primary: "pr", secondary: "pr", tertiary: "mi", unclassified: "mi", track: "tk" };
@@ -544,7 +548,7 @@
       if (ot === "yes" || ot === "true" || ot === "1") ow = 1;
       else if (ot === "-1" || ot === "reverse") ow = -1;
       else if (ot !== "no" && (tg.junction === "roundabout" || tg.highway === "motorway")) ow = 1;
-      var w = { id: el.id, name: name, nodes: el.nodes, g: el.geometry, oneway: ow, round: isRound, ref: refv, rawName: rawName, key: isRound ? "#" + el.id : (rawName || refv || "#" + el.id), nocar: noCar(tg), hw: hwv, max: parseMax(tg.maxspeed), maxf: parseMax(tg["maxspeed:forward"]), maxb: parseMax(tg["maxspeed:backward"]) };
+      var w = { id: el.id, name: name, nodes: el.nodes, g: el.geometry, oneway: ow, round: isRound, ref: refv, rawName: rawName, key: isRound ? "#" + el.id : (rawName || refv || "#" + el.id), nocar: noCar(tg), dest: (tg.destination || tg["destination:forward"] || "").split(";").slice(0, 2).map(function (x) { return x.trim(); }).filter(Boolean).join(" · "), hw: hwv, max: parseMax(tg.maxspeed), maxf: parseMax(tg["maxspeed:forward"]), maxb: parseMax(tg["maxspeed:backward"]) };
       ways.push(w);
       el.nodes.forEach(function (nid, i) { (idx[nid] = idx[nid] || []).push({ w: w, i: i }); });
     });
@@ -578,25 +582,25 @@
 
   // 1. forrás: Overpass (több tükör). Az Overpass-JSON közvetlenül használható.
   function viaOverpass(lat, lon) {
-    var half = ruralMode ? 800 : ROAD_HALF_M;
+    var wide = wideNow(), half = wide ? 1200 : ROAD_HALF_M;
     var dlat = half / 111320, dlon = dlat / Math.cos(lat * Math.PI / 180);
     var bbox = [lat - dlat, lon - dlon, lat + dlat, lon + dlon].map(function (v) { return v.toFixed(5); }).join(",");
     var q = '[out:json][timeout:25];(' +
       'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified)$"](' + bbox + ');' +
       'way["highway"~"^(residential|living_street)$"]["name"](' + bbox + ');' +
             'way["highway"="track"](' + bbox + ');' +
-      (ruralMode ? 'way["highway"~"^(motorway_link|trunk_link)$"](' + bbox + ');' : '') +
+      (wide ? 'way["highway"~"^(motorway_link|trunk_link)$"](' + bbox + ');' : '') +
       'way["junction"~"^(roundabout|circular)$"](' + bbox + ');' +
       'node["highway"~"^(give_way|stop|traffic_signals|crossing)$"](' + bbox + ');node["railway"="level_crossing"](' + bbox + ');node["traffic_calming"](' + bbox + '););out geom qt;';
     var enc = encodeURIComponent(q);
     return firstOf(OVERPASS.map(function (u) { return u + "?data=" + enc; }), 20000, 3000)
-      .then(function (r) { return { json: r.json, host: r.host, refetchM: ruralMode ? 250 : 150, pref: "overpass", half: half }; });
+      .then(function (r) { return { json: r.json, host: r.host, refetchM: wide ? 350 : 150, pref: "overpass", half: half, wide: wide }; });
   }
 
   // 2. forrás: az OpenStreetMap saját API-ja (rövid kérés, nyers adat), a szükséges utakat a böngésző szűri ki.
   var ROAD_MAIN = { motorway: 1, trunk: 1, primary: 1, secondary: 1, tertiary: 1, unclassified: 1 };
   function viaOsmApi(lat, lon, half) {
-    half = half || (ruralMode ? 700 : 300);
+    half = half || (wideNow() ? 700 : 300);
     var dlat = half / 111320, dlon = dlat / Math.cos(lat * Math.PI / 180);
     var bbox = [lon - dlon, lat - dlat, lon + dlon, lat + dlat].map(function (v) { return v.toFixed(5); }).join(",");
     return fetchJson("https://api.openstreetmap.org/api/0.6/map.json?bbox=" + bbox, 25000).then(function (j) {
@@ -609,13 +613,13 @@
       (j.elements || []).forEach(function (el) {
         if (el.type !== "way" || !el.tags || !el.nodes) return;
         var hw = el.tags.highway || "", jn = el.tags.junction;
-        var ok = jn === "roundabout" || jn === "circular" || ROAD_MAIN[hw] || ((hw === "residential" || hw === "living_street") && el.tags.name) || hw === "track" || (ruralMode && (hw === "motorway_link" || hw === "trunk_link"));
+        var ok = jn === "roundabout" || jn === "circular" || ROAD_MAIN[hw] || ((hw === "residential" || hw === "living_street") && el.tags.name) || hw === "track" || (wideNow() && (hw === "motorway_link" || hw === "trunk_link"));
         if (!ok) return;
         var g = el.nodes.map(function (id) { return nodes[id]; });
         if (g.some(function (x) { return !x; })) return;
         out.push({ type: "way", id: el.id, nodes: el.nodes, geometry: g, tags: el.tags });
       });
-      return { json: { elements: out }, host: "api.openstreetmap.org", refetchM: Math.max(40, half - (half > 400 ? 520 : 200)), pref: "api", half: half };
+      return { json: { elements: out }, host: "api.openstreetmap.org", refetchM: Math.max(40, half - (half > 400 ? 520 : 200)), pref: "api", half: half, wide: wideNow() };
     }, function (e) {
       // 400: túl sok adat a területen, kisebb területtel újrapróbáljuk
       if (/http 400/.test(e.message) && half > 150) return viaOsmApi(lat, lon, 150);
@@ -633,7 +637,7 @@
   function loadRoads(lat, lon) {
     ROAD.fetching = true; ROAD.lastTry = Date.now();
     fetchRoadData(lat, lon)
-      .then(function (r) { buildRoads(r.json, lat, lon); ROAD.host = r.host; ROAD.pref = r.pref; ROAD.refetchM = r.refetchM; ROAD.half = r.half; ROAD.err = ""; ROAD.fails = 0; })
+      .then(function (r) { buildRoads(r.json, lat, lon); ROAD.host = r.host; ROAD.pref = r.pref; ROAD.refetchM = r.refetchM; ROAD.half = r.half; ROAD.wasWide = !!r.wide; ROAD.err = ""; ROAD.fails = 0; })
       .catch(function (e) { ROAD.failed = true; ROAD.fails++; ROAD.err = ((e && e.message) || "ismeretlen hiba").slice(0, 260); })
       .then(function () { ROAD.fetching = false; roadRefresh(); });
   }
@@ -651,6 +655,91 @@
       })
       .catch(function () {})
       .then(function () { CITY.busy = false; roadRefresh(); });
+  }
+
+
+  // Közeli települések (Overpass): ha az útnak nincs "destination" címkéje, az irányába eső települést írjuk ki (→ város).
+  var PLACES = { list: [], pos: null, busy: false, lastTry: 0 };
+  function loadPlaces(lat, lon) {
+    PLACES.busy = true; PLACES.lastTry = Date.now();
+    var q = '[out:json][timeout:20];node["place"~"^(city|town|village)$"]["name"](around:15000,' + lat.toFixed(5) + ',' + lon.toFixed(5) + ');out;';
+    var enc = encodeURIComponent(q);
+    firstOf(OVERPASS.map(function (u) { return u + "?data=" + enc; }), 20000, 3000).then(function (r) {
+      PLACES.list = (r.json.elements || []).filter(function (e) { return e.lat !== undefined && e.tags && e.tags.name; })
+        .map(function (e) { return { n: e.tags.name, lat: e.lat, lon: e.lon, t: e.tags.place }; });
+      PLACES.pos = { lat: lat, lon: lon };
+    }).catch(function () {}).then(function () { PLACES.busy = false; roadRefresh(); });
+  }
+  function placeToward(lat, lon, brg, minD) {
+    var best = null;
+    PLACES.list.forEach(function (p) {
+      var q = xy(p.lat, p.lon, lat, lon), d = Math.sqrt(q.x * q.x + q.y * q.y);
+      if (d < minD || d > 15000 || p.n === CITY.name) return;
+      var ang = angDiff(brg, (Math.atan2(q.x, q.y) * 180 / Math.PI + 360) % 360);
+      if (ang > 30) return;
+      var sc = ang * 30 + d * 0.03 - (p.t === "city" ? 150 : p.t === "town" ? 60 : 0);
+      if (!best || sc < best.sc) best = { sc: sc, n: p.n };
+    });
+    return best ? best.n : "";
+  }
+  // Az út iránya a (w, i) csomóponttól di irányban, ~150 m-re.
+  function exitBrg(w, i, di) {
+    var a = w.g[i], acc = 0, j = i, p = a;
+    for (;;) {
+      var nj = j + di;
+      if (nj < 0 || nj >= w.g.length) break;
+      acc += gd(w.g[j], w.g[nj]); j = nj; p = w.g[j];
+      if (acc >= 150) break;
+    }
+    var q = xy(p.lat, p.lon, a.lat, a.lon);
+    return (Math.atan2(q.x, q.y) * 180 / Math.PI + 360) % 360;
+  }
+  function destLabel(w, i, di) {
+    if (w.dest) return w.dest;
+    var a = w.g[i], pl = placeToward(a.lat, a.lon, exitBrg(w, i, di), 1500);
+    return pl ? "→ " + pl : "";
+  }
+  function linkName(w, i, di) { return /_link$/.test(w.hw) ? destLabel(w, i, di) : ""; }
+
+  // Körforgalom kijáratai a behajtási irányhoz képest (jobbra az első), táblaszerű felirattal.
+  function roundExits(ring, entryW, hdg) {
+    var raw = [];
+    ring.nodes.forEach(function (nid) {
+      (ROAD.nodeIdx[nid] || []).forEach(function (e) {
+        if (e.w === ring || e.w.round) return;
+        [-1, 1].forEach(function (di) {
+          var j = e.i + di;
+          if (j < 0 || j >= e.w.g.length || !enterAllowed(e.w, di)) return;
+          var rel = ((exitBrg(e.w, e.i, di) - hdg + 540) % 360) - 180;
+          if (e.w.id === entryW.id || (e.w.key === entryW.key && Math.abs(rel) > 140)) return;
+          raw.push({ w: e.w, i: e.i, di: di, rel: rel });
+        });
+      });
+    });
+    raw.forEach(function (x) { x.k = x.rel > 170 ? x.rel - 360 : x.rel; });
+    raw.sort(function (a, b) { return b.k - a.k; });
+    var out = [];
+    raw.forEach(function (x) {
+      if (out.some(function (o) { return o.w.key === x.w.key && Math.abs(o.k - x.k) < 25; })) return;
+      out.push(x);
+    });
+    return out.slice(0, 6).map(function (x, n) {
+      var base = x.w.rawName || (x.w.ref ? refLabel(x.w.hw, x.w.ref) : ""), lbl;
+      if (x.w.dest) lbl = x.w.dest;
+      else { var pl = destLabel(x.w, x.i, x.di); lbl = base ? (pl ? base + " " + pl : base) : (pl || x.w.name); }
+      return (n + 1) + "|" + lbl;
+    });
+  }
+  var RB = null;
+  function setExits(items) {
+    var box = $("exits");
+    box.textContent = "";
+    box.hidden = !items || !items.length;
+    (items || []).forEach(function (t) {
+      var parts = t.split("|"), sp = document.createElement("span"), b = document.createElement("b");
+      b.textContent = parts[0] + "."; sp.appendChild(b); sp.appendChild(document.createTextNode(parts.slice(1).join("|")));
+      box.appendChild(sp);
+    });
   }
 
   // A pozícióhoz legközelebbi utca; az irányba nem eső utakat büntetjük, hogy kereszteződésben ne váltson a keresztutcára.
@@ -795,7 +884,7 @@
             var ent = enterAllowed(e.w, di);
             if (e.w.round && !ent) return;
             var side = cr > 0 ? "L" : "R";
-            if (!res[side] || d < res[side].d) res[side] = { name: e.w.name, d: d, noentry: !ent, round: e.w.round, ref: { w: w, k: k, fwd: fwd, e: e, di: di } };
+            if (!res[side] || d < res[side].d) res[side] = { name: linkName(e.w, e.i, di) || e.w.name, d: d, noentry: !ent, round: e.w.round, ref: { w: w, k: k, fwd: fwd, e: e, di: di } };
           });
         });
       }
@@ -883,10 +972,15 @@
     document.querySelector(".hero").className = "tile hero" + (on ? " alert" : "");
   }
 
-  function setStreet(w, rural) {
+  function setStreet(w, rural, dst) {
     var el = $("streetName");
     el.textContent = "";
     if (!rural) { el.textContent = w.name; return; }
+    if (/_link$/.test(w.hw)) {
+      var lb = document.createElement("span"); lb.className = "rsign " + (BADGE[w.hw] || "mi"); lb.textContent = "Lehajtó"; el.appendChild(lb);
+      if (dst) { var dk = document.createElement("span"); dk.textContent = " " + dst; el.appendChild(dk); }
+      return;
+    }
     var kind = KIND[w.hw] || "Út", b = document.createElement("span");
     b.className = "rsign " + (BADGE[w.hw] || "mi");
     if (w.ref) {
@@ -918,7 +1012,18 @@
       if (rawRural === ruralMode) ruralFlip = 0; else if (++ruralFlip >= 3) { ruralMode = rawRural; ruralFlip = 0; }
     }
     lookM = ruralMode ? 500 : 200;
-    setStreet(n.w, ruralMode && RURAL_HW.test(n.w.hw) && !n.w.round);
+    var dst = "";
+    if (/_link$/.test(n.w.hw)) {
+      var lf = r.hdg === null ? true : angDiff(r.hdg, n.brg) < 90, li = lf ? n.w.g.length - 1 : 0, ld = lf ? 1 : -1;
+      if (n.w.dest) dst = n.w.dest;
+      else {
+        var le = xy(n.w.g[li].lat, n.w.g[li].lon, r.lat, r.lon), lbrg = (Math.atan2(le.x, le.y) * 180 / Math.PI + 360) % 360;
+        if (Math.sqrt(le.x * le.x + le.y * le.y) < 60) lbrg = exitBrg(n.w, lf ? 0 : n.w.g.length - 1, ld);
+        var lp = placeToward(r.lat, r.lon, lbrg, 1500);
+        dst = lp ? "→ " + lp : "";
+      }
+    }
+    setStreet(n.w, ruralMode && RURAL_HW.test(n.w.hw) && !n.w.round, dst);
     setWarn(wrongCnt >= 2);
     try {
       var lim = limitFor(n.w, r.hdg === null ? true : angDiff(r.hdg, n.brg) < 90);
@@ -928,6 +1033,18 @@
     } catch (e1) { $("errLine").textContent = "Hiba (korlát): " + e1.message; }
     var res = r.hdg === null ? { L: null, R: null } : crossAhead(n, r.hdg);
     setSide("L", res.L, true); setSide("R", res.R, false);
+    try {
+      var rc = null;
+      ["L", "R"].forEach(function (sd) { var o = res[sd]; if (o && o.round && o.d <= 250 && (!rc || o.d < rc.d)) rc = o; });
+      if (rc) {
+        var rf = rc.ref, pk = rf.k - (rf.fwd ? 1 : -1), eh = r.hdg;
+        if (pk >= 0 && pk < rf.w.g.length) { var ev = xy(rf.w.g[rf.k].lat, rf.w.g[rf.k].lon, rf.w.g[pk].lat, rf.w.g[pk].lon); eh = (Math.atan2(ev.x, ev.y) * 180 / Math.PI + 360) % 360; }
+        RB = { ring: rf.e.w.id, items: roundExits(rf.e.w, rf.w, eh), ts: Date.now() };
+        setExits(RB.items);
+      } else if (n.w.round && RB && RB.ring === n.w.id && Date.now() - RB.ts < 90000) {
+        setExits(RB.items);
+      } else { setExits(null); }
+    } catch (e3) { setExits(null); $("errLine").textContent = "Hiba (körforgalom): " + e3.message; }
     try { setHaz(r.hdg === null ? [] : hazAhead(n, r.hdg)); } catch (e2) { $("errLine").textContent = "Hiba (veszélyes pontok): " + e2.message; }
   }
 
@@ -969,8 +1086,9 @@
     if (c.accuracy > 50) return;
     roadLast = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, hdg: lastHeading, spd: sp.v, id: (roadLast ? roadLast.id : 0) + 1 };
     var now = Date.now();
-    var far = !ROAD.center || hav(ROAD.center.lat, ROAD.center.lon, c.latitude, c.longitude) > ROAD.refetchM || (ruralMode && ROAD.half < 700);
+    var far = !ROAD.center || hav(ROAD.center.lat, ROAD.center.lon, c.latitude, c.longitude) > ROAD.refetchM || (wideNow() && !ROAD.wasWide);
     if (far && !ROAD.fetching && now - ROAD.lastTry > (ROAD.failed ? Math.min(60000, 8000 * ROAD.fails) : 4000)) loadRoads(c.latitude, c.longitude);
+    if (ROAD.loaded && !PLACES.busy && now - PLACES.lastTry > 30000 && (!PLACES.pos || hav(PLACES.pos.lat, PLACES.pos.lon, c.latitude, c.longitude) > 6000)) loadPlaces(c.latitude, c.longitude);
     if (!CITY.name && !CITY.pos) $("cityName").textContent = "Város keresése…";
     if (!WX.busy && now - WX.lastTry > 60000 && (!WX.pos || now - WX.t > 900000 || hav(WX.pos.lat, WX.pos.lon, c.latitude, c.longitude) > 10000)) loadWx(c.latitude, c.longitude);
     var needCity = !CITY.pos || hav(CITY.pos.lat, CITY.pos.lon, c.latitude, c.longitude) > (ROAD.loaded ? 800 : 40);
@@ -1018,7 +1136,7 @@
 
   function render(p) {
     var c = p.coords;
-    last = p;
+    last = p; lastFixAt = Date.now();
 
     if (c.altitude !== null && !isNaN(c.altitude)) {
       $("alt").textContent = fmt(c.altitude, 1);
@@ -1168,9 +1286,11 @@
   showTimes();
   setInterval(function () {
     if (dayKey() !== curDay) { curDay = dayKey(); $("resetBtn").click(); }
-    if (watchId !== null && last && Date.now() - last.timestamp < 15000 && lastSpdKmh !== null) {
+    var tmV = lastSpdKmh !== null ? lastSpdKmh : (dist - tmPrevDist) * 3.6;
+    tmPrevDist = dist;
+    if (watchId !== null && lastFixAt && Date.now() - lastFixAt < 15000) {
       if (TM.t0 === null) TM.t0 = Date.now();
-      var want = lastSpdKmh >= 3 ? "drive" : "stop";
+      var want = tmV >= 3 ? "drive" : "stop";
       if (!TM.state) { TM.state = want; TM.cand = want; TM.candN = 0; }
       if (want === TM.state) { TM.candN = 0; }
       else if (++TM.candN >= 3) { TM.state = want; TM.candN = 0; if (want === "drive") TM.stopCur = 0; }
