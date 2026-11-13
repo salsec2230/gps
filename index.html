@@ -134,7 +134,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.16</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.17</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -262,7 +262,7 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.16</p>
+<p class="foot" id="ver">Verzió: 11.17</p>
 
 <script>
 (function () {
@@ -443,9 +443,9 @@
     if (sp.v === null) { samples = []; accTarget = 0; $("accInfo").textContent = "Nincs sebességadat"; return; }
     var t = sp.t / 1000;
     samples.push({ t: t, v: sp.v }); lastSampleT = sp.t;
-    while (samples.length && samples[0].t < t - 2.2) samples.shift();
+    while (samples.length && samples[0].t < t - 1.6) samples.shift();
     var n = samples.length, span = n >= 2 ? samples[n - 1].t - samples[0].t : 0;
-    if (span >= 0.8) {
+    if (span >= 0.5) {
       var tm = 0, vm = 0, i;
       for (i = 0; i < n; i++) { tm += samples[i].t; vm += samples[i].v; }
       tm /= n; vm /= n;
@@ -460,7 +460,7 @@
   setInterval(function () {
     var idle = watchId === null || lastSampleT === 0 || Date.now() - lastSampleT > 3500;
     var target = idle ? 0 : accTarget;
-    accDisp += 0.5 * (target - accDisp);
+    accDisp += 0.75 * (target - accDisp);
     if (watchId !== null && lastSampleT !== 0) setBar(accDisp);
   }, 100);
 
@@ -702,11 +702,37 @@
   function linkName(w, i, di) { return /_link$/.test(w.hw) ? destLabel(w, i, di) : ""; }
 
   // Körforgalom kijáratai a behajtási irányhoz képest (jobbra az első), táblaszerű felirattal.
+  // Az útvonalon előre (250 m-ig) az első körforgalom, amelybe behajtunk.
+  function ringAhead(n, heading) {
+    var found = null;
+    walk(n, heading, 250, function (w, k, pk, fwd, d) {
+      if (w.round) return false;
+      var hit = null;
+      (ROAD.nodeIdx[w.nodes[k]] || []).forEach(function (e) { if (e.w.round) hit = e.w; });
+      if (hit) { found = { ring: hit, w: w, k: k, pk: pk, d: d }; return false; }
+      return true;
+    });
+    return found;
+  }
+  function ringGroup(ring) {       // a körforgalom gyakran több szakaszra van bontva: az összefüggő gyűrűszakaszok összegyűjtése
+    var group = [ring], seen = {}; seen[ring.id] = 1;
+    for (var gi = 0; gi < group.length && group.length < 12; gi++) {
+      group[gi].nodes.forEach(function (nid) {
+        (ROAD.nodeIdx[nid] || []).forEach(function (e) {
+          if (e.w.round && !seen[e.w.id]) { seen[e.w.id] = 1; group.push(e.w); }
+        });
+      });
+    }
+    return group;
+  }
   function roundExits(ring, entryW, hdg) {
-    var raw = [];
-    ring.nodes.forEach(function (nid) {
+    var raw = [], grp = ringGroup(ring), nodesSeen = {};
+    var ids = {}; grp.forEach(function (g) { ids[g.id] = 1; });
+    var allNodes = [];
+    grp.forEach(function (g) { g.nodes.forEach(function (nid) { if (!nodesSeen[nid]) { nodesSeen[nid] = 1; allNodes.push(nid); } }); });
+    allNodes.forEach(function (nid) {
       (ROAD.nodeIdx[nid] || []).forEach(function (e) {
-        if (e.w === ring || e.w.round) return;
+        if (ids[e.w.id] || e.w.round) return;
         [-1, 1].forEach(function (di) {
           var j = e.i + di;
           if (j < 0 || j >= e.w.g.length || !enterAllowed(e.w, di)) return;
@@ -1034,14 +1060,15 @@
     var res = r.hdg === null ? { L: null, R: null } : crossAhead(n, r.hdg);
     setSide("L", res.L, true); setSide("R", res.R, false);
     try {
-      var rc = null;
-      ["L", "R"].forEach(function (sd) { var o = res[sd]; if (o && o.round && o.d <= 250 && (!rc || o.d < rc.d)) rc = o; });
+      var rc = (r.hdg !== null && !n.w.round) ? ringAhead(n, r.hdg) : null;
       if (rc) {
-        var rf = rc.ref, pk = rf.k - (rf.fwd ? 1 : -1), eh = r.hdg;
-        if (pk >= 0 && pk < rf.w.g.length) { var ev = xy(rf.w.g[rf.k].lat, rf.w.g[rf.k].lon, rf.w.g[pk].lat, rf.w.g[pk].lon); eh = (Math.atan2(ev.x, ev.y) * 180 / Math.PI + 360) % 360; }
-        RB = { ring: rf.e.w.id, items: roundExits(rf.e.w, rf.w, eh), ts: Date.now() };
+        var eh = r.hdg;
+        if (rc.pk >= 0 && rc.pk < rc.w.g.length) { var ev = xy(rc.w.g[rc.k].lat, rc.w.g[rc.k].lon, rc.w.g[rc.pk].lat, rc.w.g[rc.pk].lon); eh = (Math.atan2(ev.x, ev.y) * 180 / Math.PI + 360) % 360; }
+        var grp = ringGroup(rc.ring), ids = {};
+        grp.forEach(function (g) { ids[g.id] = 1; });
+        RB = { ids: ids, items: roundExits(rc.ring, rc.w, eh), ts: Date.now() };
         setExits(RB.items);
-      } else if (n.w.round && RB && RB.ring === n.w.id && Date.now() - RB.ts < 90000) {
+      } else if (n.w.round && RB && RB.ids[n.w.id] && Date.now() - RB.ts < 90000) {
         setExits(RB.items);
       } else { setExits(null); }
     } catch (e3) { setExits(null); $("errLine").textContent = "Hiba (körforgalom): " + e3.message; }
