@@ -134,7 +134,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.18</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.19</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -262,7 +262,7 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.18</p>
+<p class="foot" id="ver">Verzió: 11.19</p>
 
 <script>
 (function () {
@@ -547,7 +547,7 @@
       var ot = tg.oneway, ow = 0;
       if (ot === "yes" || ot === "true" || ot === "1") ow = 1;
       else if (ot === "-1" || ot === "reverse") ow = -1;
-      else if (ot !== "no" && (tg.junction === "roundabout" || tg.highway === "motorway")) ow = 1;
+      else if (ot !== "no" && (tg.junction === "roundabout" || tg.highway === "motorway" || tg.highway === "motorway_link" || tg.highway === "trunk_link")) ow = 1;
       var w = { id: el.id, name: name, nodes: el.nodes, g: el.geometry, oneway: ow, round: isRound, ref: refv, rawName: rawName, key: isRound ? "#" + el.id : (rawName || refv || "#" + el.id), nocar: noCar(tg), dest: (tg.destination || tg["destination:forward"] || "").split(";").slice(0, 2).map(function (x) { return x.trim(); }).filter(Boolean).join(" · "), hw: hwv, max: parseMax(tg.maxspeed), maxf: parseMax(tg["maxspeed:forward"]), maxb: parseMax(tg["maxspeed:backward"]) };
       ways.push(w);
       el.nodes.forEach(function (nid, i) { (idx[nid] = idx[nid] || []).push({ w: w, i: i }); });
@@ -694,12 +694,22 @@
     var q = xy(p.lat, p.lon, a.lat, a.lon);
     return (Math.atan2(q.x, q.y) * 180 / Math.PI + 360) % 360;
   }
+  function pointAlong(w, i, di, dist) {
+    var acc = 0, j = i;
+    for (;;) {
+      var nj = j + di;
+      if (nj < 0 || nj >= w.g.length) break;
+      acc += gd(w.g[j], w.g[nj]); j = nj;
+      if (acc >= dist) break;
+    }
+    return w.g[j];
+  }
   function destLabel(w, i, di) {
     if (w.dest) return w.dest;
     var a = w.g[i], pl = placeToward(a.lat, a.lon, exitBrg(w, i, di), 1500);
     return pl ? "→ " + pl : "";
   }
-  function linkName(w, i, di) { return /_link$/.test(w.hw) ? destLabel(w, i, di) : ""; }
+  function linkName(w, i, di) { return /_link$/.test(w.hw) ? (destLabel(w, i, di) || "Lehajtó") : ""; }
 
   // Körforgalom kijáratai a behajtási irányhoz képest (jobbra az első), táblaszerű felirattal.
   // Az útvonalon előre (250 m-ig) az első körforgalom, amelybe behajtunk.
@@ -737,12 +747,12 @@
           var j = e.i + di;
           if (j < 0 || j >= e.w.g.length || !enterAllowed(e.w, di)) return;
           var rel = ((exitBrg(e.w, e.i, di) - hdg + 540) % 360) - 180;
-          if (e.w.id === entryW.id || (e.w.key === entryW.key && Math.abs(rel) > 140)) return;
+          if (e.w.id === entryW.id || Math.abs(rel) > 160 || (e.w.key === entryW.key && Math.abs(rel) > 120)) return;
           raw.push({ w: e.w, i: e.i, di: di, rel: rel });
         });
       });
     });
-    raw.forEach(function (x) { x.k = x.rel > 170 ? x.rel - 360 : x.rel; });
+    raw.forEach(function (x) { x.k = x.rel > 130 ? x.rel - 360 : x.rel; });
     raw.sort(function (a, b) { return b.k - a.k; });
     var out = [];
     raw.forEach(function (x) {
@@ -898,17 +908,18 @@
         var node = w.g[k], pv = xy(w.g[pk].lat, w.g[pk].lon, node.lat, node.lon);
         var fx = -pv.x, fy = -pv.y, fl = Math.sqrt(fx * fx + fy * fy) || 1;
         (ROAD.nodeIdx[w.nodes[k]] || []).forEach(function (e) {
-          if (e.w === w || e.w === skip || e.w.key === w.key || (w.round && e.w.round)) return;
+          var isLink = /_link$/.test(e.w.hw);
+          if (e.w === w || e.w === skip || (e.w.key === w.key && !isLink) || (w.round && e.w.round)) return;
           if (!ruralMode && !e.w.round && !e.w.rawName && !e.w.ref) return;
           [-1, 1].forEach(function (di) {
             var j = e.i + di;
             if (j < 0 || j >= e.w.g.length) return;
-            var q = xy(e.w.g[j].lat, e.w.g[j].lon, node.lat, node.lon), ql = Math.sqrt(q.x * q.x + q.y * q.y);
+            var pj = isLink ? pointAlong(e.w, e.i, di, 40) : e.w.g[j], q = xy(pj.lat, pj.lon, node.lat, node.lon), ql = Math.sqrt(q.x * q.x + q.y * q.y);
             if (ql < 1) return;
             var cr = fx * q.y - fy * q.x;
-            if (!e.w.round && Math.abs(cr) / (fl * ql) < 0.34) return;
+            if (!e.w.round && Math.abs(cr) / (fl * ql) < (isLink ? 0.04 : 0.34)) return;
             var ent = enterAllowed(e.w, di);
-            if (e.w.round && !ent) return;
+            if ((e.w.round || isLink) && !ent) return;
             var side = cr > 0 ? "L" : "R";
             cands[side].push({ name: linkName(e.w, e.i, di) || e.w.name, d: d, noentry: !ent, round: e.w.round, ref: { w: w, k: k, fwd: fwd, e: e, di: di } });
           });
