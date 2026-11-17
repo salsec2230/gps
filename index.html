@@ -134,7 +134,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.19</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.20</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -146,7 +146,7 @@
         <div class="side left"><div class="sname" id="crossL">–</div><div class="sbar"><div class="sfill" id="barL"></div></div><div class="sdist" id="distL">&nbsp;</div></div>
         <div class="side right"><div class="sname" id="crossR">–</div><div class="sbar"><div class="sfill" id="barR"></div></div><div class="sdist" id="distR">&nbsp;</div></div>
       </div>
-      <div class="here"><div class="city" id="cityName">Indítsd el a GPS-t</div><div class="street" id="streetName">–</div><div class="exits" id="exits" hidden></div><div class="warn" id="warn" hidden>Behajtani tilos (egyirányú utca)</div><div class="haz" id="haz"></div><div class="sub" id="roadInfo" style="font-size:13px">&nbsp;</div><div class="sub" id="wxInfo" style="font-size:13px"></div></div>
+      <div class="here"><div class="city" id="cityName">Indítsd el a GPS-t</div><div class="street" id="streetName">–</div><div class="exits" id="exits" hidden></div><div class="warn" id="warn" hidden>Behajtani tilos (egyirányú utca)</div><div class="haz" id="haz"></div><div class="haz" id="traf"></div><div class="sub" id="roadInfo" style="font-size:13px">&nbsp;</div><div class="sub" id="wxInfo" style="font-size:13px"></div></div>
     </div>
     <div>
     <div class="label">GPS magasság</div>
@@ -236,6 +236,15 @@
     <div class="value" id="coords" style="font-size:26px">–</div>
   </section>
 
+  <section class="tile wide" id="ttTile">
+    <div class="label">Forgalmi adatok (TomTom)</div>
+    <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <input id="ttKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="TomTom API-kulcs" style="flex:1;min-width:0;font-size:18px;min-height:48px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)">
+      <button id="ttSave" type="button">Mentés</button>
+    </div>
+    <div class="sub" id="ttStat" style="font-size:14px">Nincs kulcs megadva.</div>
+  </section>
+
   <section class="tile wide" id="timeTile">
     <div class="label">Idők</div>
     <div class="tgrid">
@@ -262,7 +271,7 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.19</p>
+<p class="foot" id="ver">Verzió: 11.20</p>
 
 <script>
 (function () {
@@ -419,6 +428,24 @@
     }
     if (c.accuracy <= 50) speedPrev = { lat: c.latitude, lon: c.longitude, t: now };
     return { v: v, src: src, t: now };
+  }
+
+  // Számított sebesség: a GPS-pozíciók elmozdulásából (~2,5-6 mp), a pozíciók saját időbélyegével.
+  var posHist = [], csKmh = null;
+  function computedSpeed(p) {
+    var c = p.coords, t = p.timestamp || Date.now();
+    if (c.accuracy > 20) return null;
+    var lastH = posHist.length ? posHist[posHist.length - 1] : null;
+    if (lastH && t <= lastH.t) return csKmh;
+    if (lastH && t - lastH.t > 8000) { posHist = []; csKmh = null; }
+    posHist.push({ t: t, lat: c.latitude, lon: c.longitude });
+    while (posHist.length > 1 && t - posHist[0].t > 6000) posHist.shift();
+    var ref = null;
+    for (var i = posHist.length - 2; i >= 0; i--) { if (t - posHist[i].t >= 2500) { ref = posHist[i]; break; } }
+    if (!ref) return null;
+    var raw = hav(ref.lat, ref.lon, c.latitude, c.longitude) / ((t - ref.t) / 1000) * 3.6;
+    csKmh = csKmh === null ? raw : csKmh + 0.5 * (raw - csKmh);
+    return csKmh;
   }
 
   function setBar(v) {
@@ -1128,6 +1155,97 @@
       .then(function () { WX.busy = false; });
   }
 
+
+  // Forgalmi események (TomTom Traffic API): baleset, torlódás, lezárás a közelben (10 km). A kulcsot csak ez az eszköz tárolja.
+  var TT = { key: "", t: 0, cell: "", busy: false, list: [], err: "", lastTry: 0, seen: {}, audio: null, shown: 0 };
+  try { TT.key = localStorage.getItem("ttKey") || ""; } catch (e) {}
+  var TT_TXT = { 1: "Baleset", 6: "Torlódás", 7: "Sávlezárás", 8: "Útlezárás", 14: "Lerobbant jármű" };
+  function ttStatus(txt) { $("ttStat").textContent = txt; }
+  function ttBeep() {
+    try {
+      var ac = TT.audio; if (!ac) return;
+      [0, 0.35].forEach(function (off) {
+        var o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(ac.destination);
+        o.start(ac.currentTime + off); o.stop(ac.currentTime + off + 0.2);
+      });
+    } catch (e) {}
+  }
+  function ttFetch(lat, lon) {
+    TT.busy = true; TT.lastTry = Date.now();
+    var cla = Math.round(lat / 0.05) * 0.05, clo = Math.round(lon / 0.05) * 0.05, dl = 0.13, dn = dl / Math.cos(cla * Math.PI / 180);
+    var bbox = [clo - dn, cla - dl, clo + dn, cla + dl].map(function (v) { return v.toFixed(4); }).join(",");
+    var fields = encodeURIComponent("{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,iconCategory},from,to,length,delay,roadNumbers}}}");
+    var url = "https://api.tomtom.com/traffic/services/5/incidentDetails?key=" + encodeURIComponent(TT.key) + "&bbox=" + bbox + "&fields=" + fields + "&language=hu-HU&categoryFilter=1,6,7,8,14&timeValidityFilter=present";
+    var cellKey = cla.toFixed(2) + "," + clo.toFixed(2);
+    fetchJson(url, 15000).then(function (j) {
+      TT.list = (j.incidents || []).map(function (it) {
+        var g = it.geometry || {}, pr = it.properties || {}, pts = [];
+        if (g.type === "Point" && g.coordinates) pts = [g.coordinates];
+        else if (g.coordinates) pts = g.coordinates;
+        var ev = (pr.events && pr.events[0]) || {};
+        return { id: pr.id, cat: pr.iconCategory || ev.iconCategory || 0, pts: pts, delay: pr.delay || 0, len: pr.length || 0,
+                 road: (pr.roadNumbers || []).slice(0, 2).join("/") || pr.from || pr.to || "", desc: ev.description || "" };
+      });
+      TT.cell = cellKey; TT.t = Date.now(); TT.err = "";
+    }).catch(function (e) {
+      var m = (e && e.message) || "hiba";
+      TT.err = /http 40[13]/.test(m) ? "érvénytelen kulcs (" + m + ")" : /http 429/.test(m) ? "túl sok kérés (429)" : m;
+    }).then(function () { TT.busy = false; showTraffic(true); });
+  }
+  function showTraffic(force) {
+    var box = $("traf"), now = Date.now();
+    if (!force && now - TT.shown < 3000) return;
+    TT.shown = now;
+    box.textContent = "";
+    if (!TT.key) { ttStatus("Nincs kulcs megadva. Ingyenes fejlesztői kulcs a developer.tomtom.com oldalon kérhető."); return; }
+    if (TT.err) { ttStatus("Hiba: " + TT.err); return; }
+    if (!roadLast || !TT.t) { ttStatus("Forgalmi adatok betöltése…"); return; }
+    var r = roadLast, near = [];
+    TT.list.forEach(function (it) {
+      var best = null;
+      it.pts.forEach(function (q) {
+        var d = hav(r.lat, r.lon, q[1], q[0]);
+        if (!best || d < best.d) best = { d: d, lat: q[1], lon: q[0] };
+      });
+      if (!best || best.d > 10000) return;
+      var qq = xy(best.lat, best.lon, r.lat, r.lon), brg = (Math.atan2(qq.x, qq.y) * 180 / Math.PI + 360) % 360;
+      var ahead = r.hdg !== null && best.d > 150 && angDiff(r.hdg, brg) <= 70;
+      near.push({ it: it, d: best.d, ahead: ahead });
+    });
+    ttStatus("Frissítve " + new Date(TT.t).toTimeString().slice(0, 5) + " · " + near.length + " esemény 10 km-en belül");
+    near.sort(function (a, b) {
+      var pa = a.d - ((a.it.cat === 1 || a.it.cat === 8) ? 3000 : 0) - (a.ahead ? 2000 : 0), pb = b.d - ((b.it.cat === 1 || b.it.cat === 8) ? 3000 : 0) - (b.ahead ? 2000 : 0);
+      return pa - pb;
+    });
+    near.slice(0, 3).forEach(function (o) {
+      var it = o.it, c = document.createElement("span"), hard = it.cat === 1 || it.cat === 8;
+      c.className = "chip" + (hard && o.ahead && o.d < 5000 ? " near" : "");
+      var t = "▲ " + (TT_TXT[it.cat] || "Esemény") + (it.road ? " · " + it.road : "") + " · " + (o.d < 1000 ? Math.round(o.d / 10) * 10 + " m" : (o.d / 1000).toFixed(1).replace(".", ",") + " km") + (o.ahead ? " · előre" : "");
+      if (it.cat === 6 && it.delay >= 60) t += " · +" + Math.round(it.delay / 60) + " perc";
+      c.textContent = t;
+      box.appendChild(c);
+    });
+    near.forEach(function (o) {
+      if (o.it.cat === 1 && o.ahead && o.d <= 10000 && !TT.seen[o.it.id]) { TT.seen[o.it.id] = 1; ttBeep(); }
+    });
+  }
+  function trafficTick(c) {
+    if (!TT.key) { showTraffic(); return; }
+    var now = Date.now(), cell = (Math.round(c.latitude / 0.05) * 0.05).toFixed(2) + "," + (Math.round(c.longitude / 0.05) * 0.05).toFixed(2);
+    if (!TT.busy && now - TT.lastTry > (TT.err ? 60000 : 20000) && (cell !== TT.cell || now - TT.t > 180000)) ttFetch(c.latitude, c.longitude);
+    showTraffic();
+  }
+  $("ttKey").value = TT.key;
+  $("ttSave").addEventListener("click", function () {
+    TT.key = $("ttKey").value.trim();
+    try { localStorage.setItem("ttKey", TT.key); } catch (e) {}
+    TT.t = 0; TT.cell = ""; TT.err = ""; TT.list = []; TT.seen = {};
+    if (!TT.audio) { try { TT.audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (TT.key && roadLast && !TT.busy) ttFetch(roadLast.lat, roadLast.lon); else showTraffic(true);
+  });
+  showTraffic(true);
+
   function roadUpdate(p, sp) {
     var c = p.coords;
     if (c.heading !== null && !isNaN(c.heading) && (sp.v === null || sp.v > 1.5)) lastHeading = c.heading;
@@ -1142,6 +1260,7 @@
     var needCity = !CITY.pos || hav(CITY.pos.lat, CITY.pos.lon, c.latitude, c.longitude) > (ROAD.loaded ? 800 : 40);
     if (!CITY.busy && needCity && now - CITY.lastTry > (ROAD.loaded ? 15000 : 10000)) loadCity(c.latitude, c.longitude);
     roadRefresh();
+    trafficTick(c);
   }
 
   function track(p) {
@@ -1197,8 +1316,15 @@
     }
 
     var sp = speedOf(p);
-    $("spd").textContent = sp.v !== null ? fmt(sp.v * 3.6, c.accuracy <= 20 ? 1 : 0) : "–";
-    lastSpdKmh = sp.v !== null ? sp.v * 3.6 : null; applyLimit();
+    var repK = (c.speed !== null && !isNaN(c.speed)) ? c.speed * 3.6 : null, compK = computedSpeed(p), vK = null, vDec = 0;
+    if (repK !== null) {
+      if (Math.abs(repK - Math.round(repK)) > 0.05) { vK = repK; vDec = c.accuracy <= 20 ? 1 : 0; }      // az autó tizedes értéket is ad
+      else if (compK !== null && repK >= 3 && Math.abs(compK - repK) <= 2) {                             // egész km/h érkezett: a számított érték, ha 2 km/h-n belül egyezik
+        vK = Math.max(repK - 1, Math.min(repK + 1, compK)); vDec = 1;
+      } else { vK = repK; vDec = 0; }
+    } else if (sp.v !== null) { vK = sp.v * 3.6; vDec = c.accuracy <= 20 ? 1 : 0; }
+    $("spd").textContent = vK !== null ? fmt(vK, vDec) : "–";
+    lastSpdKmh = vK; applyLimit();
 
     if (c.heading !== null && !isNaN(c.heading)) {
       $("hdg").textContent = fmt(c.heading, 0) + "°";
@@ -1233,6 +1359,7 @@
   }
 
   function start() {
+    if (!TT.audio) { try { TT.audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
     if (!navigator.geolocation) {
       setStatus("bad", "Nem támogatott");
       showMsg("Ez a böngésző nem támogatja a helymeghatározást.", true);
@@ -1264,7 +1391,7 @@
     $("altMax").textContent = "–";
     prev = null; dist = 0; pts = []; gradeS = null;
     TM.drvCur = TM.stopCur = TM.drvAll = TM.stopAll = 0; TM.t0 = null; TM.state = ""; TM.candN = 0; showTimes();
-    resetAccel();
+    resetAccel(); posHist = []; csKmh = null;
     $("trip").textContent = "0 m";
     $("grade").textContent = "–";
     $("slopeKind").textContent = "Várakozás mozgásra";
