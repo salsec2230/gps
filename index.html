@@ -134,7 +134,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.20</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.21</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -162,6 +162,7 @@
     <div class="spdrow">
       <div class="value"><span id="spd">–</span><span class="unit">km/h</span></div>
       <div class="limit" id="limit" hidden aria-label="Sebességkorlát"></div>
+      <div class="sub" id="spdDbg" style="font-size:12px">&nbsp;</div>
     </div>
   </section>
 
@@ -271,7 +272,7 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték csak jó jelnél (20 m alatti pontosság) mutat tizedest. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.20</p>
+<p class="foot" id="ver">Verzió: 11.21</p>
 
 <script>
 (function () {
@@ -430,21 +431,30 @@
     return { v: v, src: src, t: now };
   }
 
-  // Számított sebesség: a GPS-pozíciók elmozdulásából (~2,5-6 mp), a pozíciók saját időbélyegével.
-  var posHist = [], csKmh = null;
+  // Számított sebesség: a GPS-pozíciók elmozdulásából (~2,5-6 mp). Ha a pozíciók időbélyege nem megbízható, az érkezési időt használja.
+  var posHist = [], csKmh = null, spdWhy = "";
   function computedSpeed(p) {
-    var c = p.coords, t = p.timestamp || Date.now();
-    if (c.accuracy > 20) return null;
+    var c = p.coords, arr = Date.now(), ts = p.timestamp || arr;
+    if (!(c.accuracy <= 35)) { spdWhy = "GPS pontosság " + fmt(c.accuracy, 0) + " m (35 m fölött nem számol)"; return null; }
     var lastH = posHist.length ? posHist[posHist.length - 1] : null;
-    if (lastH && t <= lastH.t) return csKmh;
-    if (lastH && t - lastH.t > 8000) { posHist = []; csKmh = null; }
-    posHist.push({ t: t, lat: c.latitude, lon: c.longitude });
-    while (posHist.length > 1 && t - posHist[0].t > 6000) posHist.shift();
-    var ref = null;
-    for (var i = posHist.length - 2; i >= 0; i--) { if (t - posHist[i].t >= 2500) { ref = posHist[i]; break; } }
-    if (!ref) return null;
-    var raw = hav(ref.lat, ref.lon, c.latitude, c.longitude) / ((t - ref.t) / 1000) * 3.6;
+    if (lastH && arr - lastH.a > 8000) { posHist = []; csKmh = null; lastH = null; }
+    if (lastH && lastH.lat === c.latitude && lastH.lon === c.longitude && arr - lastH.a < 300) return csKmh;
+    posHist.push({ t: ts, a: arr, lat: c.latitude, lon: c.longitude });
+    while (posHist.length > 1 && arr - posHist[0].a > 7000) posHist.shift();
+    var tsGood = true;
+    for (var k = 1; k < posHist.length; k++) {
+      var dts = posHist[k].t - posHist[k - 1].t;
+      if (dts <= 0 || dts > 5000) { tsGood = false; break; }
+    }
+    var n = posHist.length, cur = posHist[n - 1], ref = null;
+    for (var i = n - 2; i >= 0; i--) {
+      var dtt = tsGood ? cur.t - posHist[i].t : cur.a - posHist[i].a;
+      if (dtt >= 2500) { ref = { h: posHist[i], dt: dtt }; break; }
+    }
+    if (!ref) { spdWhy = "mintagyűjtés (" + Math.round((cur.a - posHist[0].a) / 1000) + " mp)"; return null; }
+    var raw = hav(ref.h.lat, ref.h.lon, c.latitude, c.longitude) / (ref.dt / 1000) * 3.6;
     csKmh = csKmh === null ? raw : csKmh + 0.5 * (raw - csKmh);
+    spdWhy = "";
     return csKmh;
   }
 
@@ -1320,10 +1330,14 @@
     if (repK !== null) {
       if (Math.abs(repK - Math.round(repK)) > 0.05) { vK = repK; vDec = c.accuracy <= 20 ? 1 : 0; }      // az autó tizedes értéket is ad
       else if (compK !== null && repK >= 3 && Math.abs(compK - repK) <= 2) {                             // egész km/h érkezett: a számított érték, ha 2 km/h-n belül egyezik
-        vK = Math.max(repK - 1, Math.min(repK + 1, compK)); vDec = 1;
-      } else { vK = repK; vDec = 0; }
+        vK = Math.max(repK - 1, Math.min(repK + 1, compK)); vDec = 1; spdWhy = "";
+      } else {
+        vK = repK; vDec = 0;
+        if (compK !== null) spdWhy = repK < 3 ? "áll" : "eltérés: számított " + fmt(compK, 1) + " / autó " + fmt(repK, 0);
+      }
     } else if (sp.v !== null) { vK = sp.v * 3.6; vDec = c.accuracy <= 20 ? 1 : 0; }
     $("spd").textContent = vK !== null ? fmt(vK, vDec) : "–";
+    $("spdDbg").textContent = vDec === 1 && repK !== null && Math.abs(repK - Math.round(repK)) <= 0.05 ? "számított (autó: " + fmt(repK, 0) + ")" : (repK === null ? "autó nem ad sebességet" : (spdWhy ? "autó értéke · " + spdWhy : "autó értéke"));
     lastSpdKmh = vK; applyLimit();
 
     if (c.heading !== null && !isNaN(c.heading)) {
