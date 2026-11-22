@@ -40,6 +40,7 @@
   .value { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 38px; line-height: 1.1; margin-top: 8px; overflow-wrap: anywhere; }
   .hero .value { font-size: clamp(64px, 11vw, 120px); color: var(--accent); margin-top: 0; }
   .unit { font-size: .4em; color: var(--dim); margin-left: .2em; }
+  .unit.calc { color: var(--ok); font-weight: 700; }
   .sub { font-size: 16px; color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums; }
   .wide { grid-column: span 2; }
   .tgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-top: 8px; }
@@ -82,7 +83,7 @@
   .sdist { margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 15px; color: var(--dim); font-variant-numeric: tabular-nums; }
   .city { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
   .street { margin-top: 2px; font-size: clamp(26px, 3.6vw, 38px); font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
-  .spdrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
+  .spdrow { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 6px; }
   .limit { flex: none; width: 62px; height: 62px; border-radius: 50%; border: 7px solid var(--bad); background: #fff; color: #111; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; font-weight: 800; font-size: 26px; line-height: 1; }
   .limit.small { font-size: 21px; }
   .limit[hidden] { display: none; }
@@ -138,7 +139,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.22</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.23</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -163,9 +164,8 @@
 
   <section class="tile" id="spdTile">
     <div class="label">Sebesség</div>
-    <div class="value" style="white-space:nowrap;overflow-wrap:normal"><span id="spd">–</span><span class="unit">km/h</span></div>
+    <div class="value" style="white-space:nowrap;overflow-wrap:normal"><span id="spd">–</span><span class="unit" id="spdUnit">km/h</span></div>
     <div class="spdrow">
-      <div class="sub" id="spdDbg" style="font-size:12px;min-width:0;flex:1;margin-top:0">&nbsp;</div>
       <div class="limit" id="limit" hidden aria-label="Sebességkorlát"></div>
     </div>
   </section>
@@ -261,6 +261,10 @@
       <div class="seg">
         <button type="button" data-k="traf" data-v="off">Ki</button><button type="button" data-k="traf" data-v="3">3 perc</button><button type="button" data-k="traf" data-v="10">10 perc</button><button type="button" data-k="traf" data-v="20">20 perc</button>
       </div></div>
+    <div class="cfgrow"><div class="cfgl">Útlezárások mutatása</div>
+      <div class="seg">
+        <button type="button" data-k="clos" data-v="off">Ki</button><button type="button" data-k="clos" data-v="on">Be</button>
+      </div></div>
     <div class="cfgrow"><div class="cfgl">Éttermek előre</div>
       <div class="seg">
         <button type="button" data-k="rest" data-v="off">Ki</button><button type="button" data-k="rest" data-v="fast">Gyorséttermek</button><button type="button" data-k="rest" data-v="all">Összes étterem</button>
@@ -287,9 +291,9 @@
 <div class="msg" id="msg" hidden></div>
 <div class="sub" id="errLine" style="color:var(--bad);margin-top:12px"></div>
 
-<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték tizedessel akkor látszik, ha a GPS-pozíciókból számolt, átlagolt sebesség legfeljebb 3 km/h-val tér el az autó értékétől, különben az autó egész értéke látszik. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
+<p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték tizedessel akkor látszik, ha a GPS-pozíciókból számolt, átlagolt sebesség legfeljebb 3 km/h-val tér el az autó értékétől, különben az autó egész értéke látszik. A „km/h” felirat zöld, ha számított érték látszik, szürke, ha az autó értéke. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.22</p>
+<p class="foot" id="ver">Verzió: 11.23</p>
 
 <script>
 (function () {
@@ -448,7 +452,7 @@
     return { v: v, src: src, t: now };
   }
 
-  // Számított sebesség: a GPS-pozíciók elmozdulásából (~2,5-6 mp). Ha a pozíciók időbélyege nem megbízható, az érkezési időt használja.
+  // Számított sebesség: a GPS-pozíciók elmozdulásából (~4-9 mp). Ha a pozíciók időbélyege nem megbízható, az érkezési időt használja.
   var posHist = [], csKmh = null, spdWhy = "", dispAvg = null;
   function computedSpeed(p) {
     var c = p.coords, arr = Date.now(), ts = p.timestamp || arr;
@@ -457,7 +461,7 @@
     if (lastH && arr - lastH.a > 8000) { posHist = []; csKmh = null; lastH = null; }
     if (lastH && lastH.lat === c.latitude && lastH.lon === c.longitude && arr - lastH.a < 300) return csKmh;
     posHist.push({ t: ts, a: arr, lat: c.latitude, lon: c.longitude });
-    while (posHist.length > 1 && arr - posHist[0].a > 7000) posHist.shift();
+    while (posHist.length > 1 && arr - posHist[0].a > 9000) posHist.shift();
     var tsGood = true;
     for (var k = 1; k < posHist.length; k++) {
       var dts = posHist[k].t - posHist[k - 1].t;
@@ -466,11 +470,11 @@
     var n = posHist.length, cur = posHist[n - 1], ref = null;
     for (var i = n - 2; i >= 0; i--) {
       var dtt = tsGood ? cur.t - posHist[i].t : cur.a - posHist[i].a;
-      if (dtt >= 2500) { ref = { h: posHist[i], dt: dtt }; break; }
+      if (dtt >= 4000) { ref = { h: posHist[i], dt: dtt }; break; }
     }
     if (!ref) { spdWhy = "mintagyűjtés (" + Math.round((cur.a - posHist[0].a) / 1000) + " mp)"; return null; }
     var raw = hav(ref.h.lat, ref.h.lon, c.latitude, c.longitude) / (ref.dt / 1000) * 3.6;
-    csKmh = csKmh === null ? raw : csKmh + 0.5 * (raw - csKmh);
+    csKmh = csKmh === null ? raw : csKmh + 0.3 * (raw - csKmh);
     spdWhy = "";
     return csKmh;
   }
@@ -1184,7 +1188,7 @@
 
 
   // Forgalmi események (TomTom Traffic API): baleset, torlódás, lezárás a közelben (10 km). A kulcsot csak ez az eszköz tárolja.
-  var CFG = { traf: "3", rest: "off", chg: "off" };
+  var CFG = { traf: "3", clos: "off", rest: "off", chg: "off" };
   try { var cs0 = JSON.parse(localStorage.getItem("cfg") || "null"); if (cs0) for (var ck in CFG) if (typeof cs0[ck] === "string") CFG[ck] = cs0[ck]; } catch (e) {}
   var TT = { key: "", t: 0, cell: "", busy: false, list: [], err: "", lastTry: 0, seen: {}, audio: null, shown: 0 };
   try { TT.key = localStorage.getItem("ttKey") || ""; } catch (e) {}
@@ -1239,6 +1243,7 @@
         if (!best || d < best.d) best = { d: d, lat: q[1], lon: q[0] };
       });
       if (!best || best.d > 10000) return;
+      if (it.cat === 8 && CFG.clos !== "on") return;
       if ((it.cat === 6 || it.cat === 7 || it.cat === 14) && it.delay < parseInt(CFG.traf, 10) * 60) return;   // a késéshez kötött események szűrése; baleset és lezárás mindig látszik
       var qq = xy(best.lat, best.lon, r.lat, r.lon), brg = (Math.atan2(qq.x, qq.y) * 180 / Math.PI + 360) % 360;
       var ahead = r.hdg !== null && best.d > 150 && angDiff(r.hdg, brg) <= 70;
@@ -1361,7 +1366,7 @@
       CFG[k] = v;
       try { localStorage.setItem("cfg", JSON.stringify(CFG)); } catch (e) {}
       paintCfg();
-      if (k === "traf") { TT.t = 0; TT.cell = ""; TT.lastTry = 0; showTraffic(true); if (v !== "off" && TT.key && roadLast && !TT.busy) ttFetch(roadLast.lat, roadLast.lon); }
+      if (k === "traf" || k === "clos") { TT.t = 0; TT.cell = ""; TT.lastTry = 0; showTraffic(true); if (v !== "off" && TT.key && roadLast && !TT.busy) ttFetch(roadLast.lat, roadLast.lon); }
       else { POI[k].center = null; POI[k].lastTry = 0; poiShow(true); if (v !== "off" && roadLast && !POI[k].busy) poiFetch(k, roadLast.lat, roadLast.lon); }
     });
     paintCfg();
@@ -1438,19 +1443,19 @@
     }
 
     var sp = speedOf(p);
-    var repK = (c.speed !== null && !isNaN(c.speed)) ? c.speed * 3.6 : null, compK = computedSpeed(p), vK = null, vDec = 0;
+    var repK = (c.speed !== null && !isNaN(c.speed)) ? c.speed * 3.6 : null, compK = computedSpeed(p), vK = null, vDec = 0, usedCalc = false;
     if (repK !== null) {
       if (Math.abs(repK - Math.round(repK)) > 0.05) { vK = repK; vDec = c.accuracy <= 20 ? 1 : 0; }      // az autó tizedes értéket is ad
       else if (compK !== null && repK >= 3 && Math.abs(compK - repK) <= 3) {                             // egész km/h érkezett: a számított, átlagolt érték, ha 3 km/h-n belül egyezik
-        dispAvg = dispAvg === null ? compK : dispAvg + 0.4 * (compK - dispAvg);
-        vK = dispAvg; vDec = 1; spdWhy = "";
+        dispAvg = dispAvg === null ? compK : dispAvg + 0.2 * (compK - dispAvg);
+        vK = dispAvg; vDec = 1; spdWhy = ""; usedCalc = true;
       } else {
         dispAvg = null; vK = repK; vDec = 0;
         if (compK !== null) spdWhy = repK < 3 ? "áll" : "eltérés: számított " + fmt(compK, 1) + " / autó " + fmt(repK, 0);
       }
     } else if (sp.v !== null) { vK = sp.v * 3.6; vDec = c.accuracy <= 20 ? 1 : 0; }
     $("spd").textContent = vK !== null ? fmt(vK, vDec) : "–";
-    $("spdDbg").textContent = vDec === 1 && repK !== null && Math.abs(repK - Math.round(repK)) <= 0.05 ? "számított (autó: " + fmt(repK, 0) + ")" : (repK === null ? "autó nem ad sebességet" : (spdWhy ? "autó értéke · " + spdWhy : "autó értéke"));
+    $("spdUnit").classList.toggle("calc", usedCalc);
     lastSpdKmh = vK; applyLimit();
 
     if (c.heading !== null && !isNaN(c.heading)) {
