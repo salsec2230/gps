@@ -139,7 +139,7 @@
 </head>
 <body>
 <header>
-  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.24</small></h1>
+  <h1>GPS műszerfal <small style="font-size:12px;color:var(--dim);font-weight:400">v11.25</small></h1>
   <span class="frost" id="frost" hidden></span>
   <div class="status"><button class="primary small" id="startBtn" type="button">GPS indítása</button><span class="dot" id="dot"></span><span id="statusText">Nincs indítva</span></div>
 </header>
@@ -293,7 +293,7 @@
 
 <p class="foot">A magasság a GPS-vevő által mért érték, a tengerszint feletti magasságtól néhány métert eltérhet, és a vízszintes helyzetnél kevésbé pontos. Ha a böngésző nem ad magasságot, a mező „nincs adat” értéket mutat. Az emelkedőt a legutóbbi kb. 60 méteres szakasz magasságváltozásából számolja, ezért haladás közben mutat értéket, és néhány százalékkal ingadozhat. 2% alatt az utat síknak veszi. A gyorsulás a legutóbbi 2 másodperc sebességváltozásából számolódik (±3 m/s² a sáv széle), a sáv alatt látszik az adatforrás. A km/h érték tizedessel akkor látszik, ha a GPS-pozíciókból számolt, átlagolt sebesség legfeljebb 3 km/h-val tér el az autó értékétől, különben az autó egész értéke látszik. A „km/h” felirat zöld, ha számított érték látszik, szürke, ha az autó értéke. A név előtti „!” azt jelzi, hogy a kereszteződésnél a térképen nincs jelölt tábla vagy lámpa, tehát ott jobbkéz-szabály lehet, de a térkép hiányos lehet, ezért figyelj oda. A körforgalmat, az egyirányú utcákat és a behajtási tilalmakat az OpenStreetMap adataiból számolja, a táblákat nem látja, az időszakos tilalmakat pedig nem veszi figyelembe, ezért csak tájékoztató jellegű. A város és az utcák az OpenStreetMap adataiból jönnek (Overpass és Nominatim szolgáltatás), ehhez internetkapcsolat kell, és az aktuális pozíciót elküldi ezeknek a szolgáltatásoknak. Az időjárást az Open-Meteo adja, ehhez kb. 1 km pontosságra kerekített pozíciót küld. A sebességkorlát, a gyalogátkelők, a fekvőrendőrök és a vasúti átjárók is a térképről jönnek, ezért hiányozhatnak vagy elavultak lehetnek. A szaggatott sárga keretű sebességtábla becsült korlátot jelent: ha az út lakóút és nincs rajta korlát megadva, 50 km/h-val számol. Településen kívül (névtelen vagy számozott országúton, autóúton, gyors haladásnál földúton vagy névtelen mellékúton) az oldal útszám-jelvényt mutat, és 500 m-ig néz előre; a sebességkorlát ilyenkor ismeretlen esetben becsült (130 autópálya, 110 autóút, 90 többi út). A fagyveszély a levegő hőmérsékletéből és a csapadékból következik, az útfelszín ennél hidegebb lehet.</p>
 
-<p class="foot" id="ver">Verzió: 11.24</p>
+<p class="foot" id="ver">Verzió: 11.25</p>
 
 <script>
 (function () {
@@ -705,14 +705,15 @@
       .then(function () { ROAD.fetching = false; roadRefresh(); });
   }
 
-  function loadCity(lat, lon) {
+  function loadCity(lat, lon, ahead) {
     CITY.busy = true; CITY.lastTry = Date.now();
     fetchJson("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&addressdetails=1&accept-language=hu&lat=" +
               lat.toFixed(5) + "&lon=" + lon.toFixed(5), 10000)
       .then(function (j) {
+        if (roadLast && hav(lat, lon, roadLast.lat, roadLast.lon) > 700) return;   // elavult válasz: már messze vagyunk attól a ponttól
         var a = j.address || {};
         CITY.name = a.city || a.town || a.village || a.municipality || a.hamlet || a.county || "";
-        CITY.road = a.road || a.pedestrian || a.footway || a.cycleway || a.path || "";
+        CITY.road = ahead > 30 ? "" : (a.road || a.pedestrian || a.footway || a.cycleway || a.path || "");
         CITY.pos = { lat: lat, lon: lon };
         $("cityName").textContent = CITY.name || "–";
       })
@@ -1388,8 +1389,16 @@
     if (ROAD.loaded && !PLACES.busy && now - PLACES.lastTry > 30000 && (!PLACES.pos || hav(PLACES.pos.lat, PLACES.pos.lon, c.latitude, c.longitude) > 6000)) loadPlaces(c.latitude, c.longitude);
     if (!CITY.name && !CITY.pos) $("cityName").textContent = "Város keresése…";
     if (!WX.busy && now - WX.lastTry > 60000 && (!WX.pos || now - WX.t > 900000 || hav(WX.pos.lat, WX.pos.lon, c.latitude, c.longitude) > 10000)) loadWx(c.latitude, c.longitude);
-    var needCity = !CITY.pos || hav(CITY.pos.lat, CITY.pos.lon, c.latitude, c.longitude) > (ROAD.loaded ? 800 : 40);
-    if (!CITY.busy && needCity && now - CITY.lastTry > (ROAD.loaded ? 15000 : 10000)) loadCity(c.latitude, c.longitude);
+    // A várost a haladási irányban kicsit előre eső pontra kérdezzük le (a válasz késését ellensúlyozza), 150 m-enként.
+    var cq = { lat: c.latitude, lon: c.longitude }, cAhead = 0;
+    if (ROAD.loaded && sp.v !== null && sp.v > 3 && lastHeading !== null) {
+      cAhead = Math.min(150, sp.v * 2.5);
+      var cb = lastHeading * Math.PI / 180;
+      cq.lat += cAhead * Math.cos(cb) / 111320;
+      cq.lon += cAhead * Math.sin(cb) / (111320 * Math.cos(c.latitude * Math.PI / 180));
+    }
+    var needCity = !CITY.pos || hav(CITY.pos.lat, CITY.pos.lon, cq.lat, cq.lon) > (ROAD.loaded ? 150 : 40);
+    if (!CITY.busy && needCity && now - CITY.lastTry > (ROAD.loaded ? 5000 : 10000)) loadCity(cq.lat, cq.lon, cAhead);
     roadRefresh();
     trafficTick(c);
     poiTick(c);
